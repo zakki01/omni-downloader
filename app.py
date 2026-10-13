@@ -1385,6 +1385,160 @@ async def cleanup_old_files() -> None:
         except Exception as loop_err:
             logger.error(f"Error in cleanup task: {loop_err}")
 
+def print_render_startup_diagnostics() -> str:
+    """Execute startup diagnostic suite and print Sections A through F directly to container stdout."""
+    output_lines: List[str] = []
+
+    def p(line: str = ""):
+        print(line, flush=True)
+        output_lines.append(line)
+
+    pid = pot_manager.diagnostics.pid or getattr(pot_manager.process, "pid", None) or os.environ.get("BGUTIL_PID")
+    cmd_list = pot_manager.diagnostics.cmd
+    cmd_str = " ".join(cmd_list) if cmd_list else os.environ.get("BGUTIL_CMD", "node pot-provider/build/main.js -H 127.0.0.1 -p 4416")
+    exit_code = pot_manager.diagnostics.exit_code if pot_manager.diagnostics.exit_code is not None else "None (alive/running)"
+    alive_status = "YES" if pot_manager.check_port_listening() else "NO"
+
+    p("=" * 60)
+    p("A. BGUTIL PROCESS")
+    p("=" * 60)
+    p(f"BGUTIL PID: {pid or 'N/A'}")
+    p(f"BGUTIL COMMAND: {cmd_str}")
+    p(f"BGUTIL EXIT CODE: {exit_code}")
+    p(f"BGUTIL PROCESS ALIVE: {alive_status}")
+
+    p("\n" + "=" * 60)
+    p("B. PORT 4416")
+    p("=" * 60)
+    t0 = time.time()
+    ping_ok = False
+    try:
+        req = urllib.request.Request(f"{pot_manager.url}/ping", headers={"User-Agent": "RenderStartupDiagnostics"})
+        with urllib.request.urlopen(req, timeout=5) as r:
+            body = r.read().decode("utf-8")
+            lat = (time.time() - t0) * 1000
+            p("BGUTIL PING: SUCCESS")
+            p(f"HTTP STATUS: {r.status}")
+            p(f"RESPONSE: {body}")
+            p(f"LATENCY: {lat:.2f} ms")
+            ping_ok = True
+    except Exception as e:
+        lat = (time.time() - t0) * 1000
+        p("BGUTIL PING: FAILED")
+        p(f"HTTP STATUS: {getattr(e, 'code', 'N/A')}")
+        p(f"RESPONSE: ERROR: {e}")
+        p(f"LATENCY: {lat:.2f} ms")
+
+    # Capture verbose yt-dlp logs
+    class DiagnosticCapture:
+        def __init__(self):
+            self.lines: List[str] = []
+        def debug(self, msg: str):
+            self.lines.append(f"[debug] {msg}")
+        def info(self, msg: str):
+            self.lines.append(f"[info] {msg}")
+        def warning(self, msg: str):
+            self.lines.append(f"[warning] {msg}")
+        def error(self, msg: str):
+            self.lines.append(f"[error] {msg}")
+
+    cap = DiagnosticCapture()
+    test_url = "https://www.youtube.com/shorts/HEOC4hUu6vU"
+    opts = build_unified_ydl_opts(test_url)
+    opts.update({
+        "logger": cap,
+        "verbose": True,
+        "quiet": False,
+        "no_warnings": False,
+    })
+
+    ext_success = False
+    ext_err = None
+    try:
+        ydl = yt_dlp.YoutubeDL(opts)
+        ydl.extract_info(test_url, download=False)
+        ext_success = True
+    except Exception as e:
+        ext_err = str(e)
+
+    p("\n" + "=" * 60)
+    p("C. YT-DLP PO PROVIDERS")
+    p("=" * 60)
+    provider_lines = [l for l in cap.lines if "PO Token Provider" in l or "[pot]" in l or "[jsc]" in l]
+    if provider_lines:
+        for l in provider_lines:
+            p(l)
+    else:
+        p("No PO Token Provider lines found in yt-dlp log.")
+
+    p("\n" + "=" * 60)
+    p("D. ACTUAL TOKEN GENERATION")
+    p("=" * 60)
+    has_retrieved_token = any("Retrieved a" in l and "PO Token" in l for l in cap.lines)
+    has_generating_token = any("Generating a" in l and "PO Token" in l for l in cap.lines)
+    p(f"TARGET URL: {test_url}")
+    p(f"LOG CONTAINS 'Retrieved a gvs PO Token': {'YES' if has_retrieved_token else 'NO'}")
+    p(f"LOG CONTAINS 'Generating a ... PO Token': {'YES' if has_generating_token else 'NO'}")
+    if has_retrieved_token:
+        p("DETAILS: GVS PO Token was successfully retrieved by yt-dlp from bgutil HTTP server.")
+    else:
+        p(f"DETAILS: No PO Token was retrieved during extraction. Extractor error: {ext_err}")
+
+    p("\n" + "=" * 60)
+    p("E. NETWORK FAILURE")
+    p("=" * 60)
+    try:
+        req_yt = urllib.request.Request("https://www.youtube.com", headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req_yt, timeout=10) as r_yt:
+            html = r_yt.read().decode("utf-8", errors="ignore")
+            has_ytatn = "ytAtN" in html
+            p(f"OUTBOUND YOUTUBE REACHABLE: YES (HTTP {r_yt.status}, HTML size: {len(html)} bytes)")
+            p(f"BOTGUARD CHALLENGE DETECTED: {'YES' if has_ytatn else 'NO'}")
+    except Exception as e:
+        p(f"OUTBOUND YOUTUBE REACHABLE: NO (Error: {e})")
+
+    direct_pot_ok = False
+    try:
+        t_pot = time.time()
+        req_pot = urllib.request.Request(
+            f"{pot_manager.url}/get_pot",
+            data=json.dumps({"bypass_cache": True}).encode("utf-8"),
+            headers={"Content-Type": "application/json"}
+        )
+        with urllib.request.urlopen(req_pot, timeout=20) as r_pot:
+            pot_data = json.loads(r_pot.read().decode("utf-8"))
+            pot_dur = time.time() - t_pot
+            token_sample = str(pot_data.get("poToken"))[:30] + "..." if pot_data.get("poToken") else "None"
+            p(f"DIRECT /get_pot TEST: SUCCESS (Duration: {pot_dur:.2f}s, Token Preview: {token_sample})")
+            direct_pot_ok = True
+    except Exception as e:
+        p(f"DIRECT /get_pot TEST: FAILED (Error: {e})")
+
+    p("\n" + "=" * 60)
+    p("F. FINAL CLASSIFICATION")
+    p("=" * 60)
+    if not ping_ok:
+        classification = "1. BGUTIL NOT RUNNING"
+    elif not has_retrieved_token and not direct_pot_ok:
+        classification = "2. BGUTIL RUNNING BUT TOKEN GENERATION FAILING"
+    elif (has_retrieved_token or direct_pot_ok) and ext_err and ("confirm you’re not a bot" in ext_err.lower() or "not a bot" in ext_err.lower()):
+        classification = "3. PO TOKEN GENERATED BUT YOUTUBE STILL BLOCKING THE REQUEST"
+    elif ext_success:
+        classification = "ALL SYSTEMS OPERATIONAL (PO Token generated, extraction succeeded)"
+    else:
+        classification = f"4. OTHER YT-DLP CONFIGURATION ERROR ({ext_err})"
+
+    p(f"CLASSIFICATION: {classification}")
+    p("=" * 60 + "\n")
+
+    diag_text = "\n".join(output_lines)
+    try:
+        (LOGS_DIR / "startup_diagnostics.txt").write_text(diag_text, encoding="utf-8")
+    except Exception:
+        pass
+
+    return diag_text
+
 # ---------------------------------------------------------------------------
 # FastAPI Lifespan & App Setup
 # ---------------------------------------------------------------------------
@@ -1396,7 +1550,10 @@ async def lifespan(app: FastAPI):
     # 2. Re-run self-check after POT startup
     run_startup_self_check()
 
-    # 3. Start background cleanup loop
+    # 3. Print dedicated Render startup diagnostics (Sections A through F)
+    print_render_startup_diagnostics()
+
+    # 4. Start background cleanup loop
     cleanup_task = asyncio.create_task(cleanup_old_files())
 
     yield
@@ -1609,6 +1766,14 @@ def run_live_diagnostics(test_url: str = "https://www.youtube.com/shorts/HEOC4hU
 async def api_diagnostics_live(url: str = "https://www.youtube.com/shorts/HEOC4hUu6vU"):
     """Execute live container diagnostic suite (Steps 1 through 6) inside Render environment."""
     return run_live_diagnostics(url)
+
+@app.get("/api/diagnostics/startup")
+async def api_diagnostics_startup():
+    """Return the raw text of Sections A through F produced on container boot."""
+    diag_file = LOGS_DIR / "startup_diagnostics.txt"
+    if diag_file.is_file():
+        return FileResponse(diag_file, media_type="text/plain; charset=utf-8")
+    return {"message": "Startup diagnostics not yet generated"}
 
 @app.get("/terms")
 async def get_terms():

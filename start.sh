@@ -24,18 +24,24 @@ if [ -n "$POT_DIR" ] && { [ -f "$POT_DIR/build/main.js" ] || [ -f "$POT_DIR/src/
         cd "$POT_DIR"
         node build/main.js -H 127.0.0.1 -p 4416 >> "$POT_LOG" 2>&1 &
         POT_PID=$!
+        export BGUTIL_PID="$POT_PID"
+        export BGUTIL_CMD="node $POT_DIR/build/main.js -H 127.0.0.1 -p 4416"
         cd /app
     elif command -v deno >/dev/null 2>&1 && [ -f "$POT_DIR/src/main.ts" ]; then
         echo "[CONTAINER] Runtime: Deno ($(deno -V))"
         cd "$POT_DIR"
         deno run --allow-env --allow-net --allow-ffi --allow-read src/main.ts -H 127.0.0.1 -p 4416 >> "$POT_LOG" 2>&1 &
         POT_PID=$!
+        export BGUTIL_PID="$POT_PID"
+        export BGUTIL_CMD="deno run --allow-env --allow-net --allow-ffi --allow-read $POT_DIR/src/main.ts -H 127.0.0.1 -p 4416"
         cd /app
     elif command -v node >/dev/null 2>&1 && [ -f "$POT_DIR/src/main.ts" ]; then
         echo "[CONTAINER] Runtime: Node.js (via ts-node/tsx if available)"
         cd "$POT_DIR"
         node build/main.js -H 127.0.0.1 -p 4416 >> "$POT_LOG" 2>&1 &
         POT_PID=$!
+        export BGUTIL_PID="$POT_PID"
+        export BGUTIL_CMD="node $POT_DIR/build/main.js -H 127.0.0.1 -p 4416"
         cd /app
     fi
 
