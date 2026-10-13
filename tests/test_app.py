@@ -294,5 +294,25 @@ def test_health_diagnostics_endpoint():
     assert "pot_provider" in engine
     assert "pot_provider_diagnostics" in engine
 
+def test_api_diagnostics_live_endpoint():
+    from app import pot_manager
+    pot_manager.start()
+    try:
+        client = TestClient(app)
+        resp = client.get("/api/diagnostics/live")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "step1_and_2_provider_server" in data
+        assert "step3_token_generation" in data
+        assert "step4_outbound_network" in data
+        assert "step5_extractor_configuration" in data
+        assert "step6_actual_test" in data
+        assert "root_cause_classification" in data
+        assert data["step1_and_2_provider_server"]["listening_on_127_0_0_1_4416"] is True
+        assert data["step1_and_2_provider_server"]["ping_ok"] is True
+    finally:
+        pot_manager.stop()
+
+
 
 

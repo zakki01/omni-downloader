@@ -1458,6 +1458,158 @@ async def health_diagnostics():
         "engine": check_status,
     }
 
+def run_live_diagnostics(test_url: str = "https://www.youtube.com/shorts/HEOC4hUu6vU") -> Dict[str, Any]:
+    """Execute live 6-step diagnostic suite inside the running container environment."""
+    report: Dict[str, Any] = {
+        "timestamp": time.strftime("%Y-%m-%d %H:%M:%S UTC", time.gmtime()),
+        "test_url": test_url,
+    }
+
+    # Step 1 & 2: Verify Provider Server & /ping
+    listening = pot_manager.check_port_listening()
+    ping_ok, ping_data, ping_err = pot_manager.ping()
+    provider_log_tail = pot_manager._read_log_tail(max_lines=30)
+
+    report["step1_and_2_provider_server"] = {
+        "listening_on_127_0_0_1_4416": listening,
+        "ping_ok": ping_ok,
+        "ping_payload": ping_data,
+        "ping_error": ping_err,
+        "process_pid": pot_manager.diagnostics.pid,
+        "exit_code": pot_manager.diagnostics.exit_code,
+        "command": pot_manager.diagnostics.cmd,
+        "provider_log_tail": provider_log_tail,
+    }
+
+    # Step 3: Test Direct Token Generation via /get_pot
+    token_test: Dict[str, Any] = {"status": "untested"}
+    if listening:
+        try:
+            t0 = time.time()
+            req = urllib.request.Request(
+                f"{pot_manager.url}/get_pot",
+                data=json.dumps({"bypass_cache": True}).encode("utf-8"),
+                headers={"Content-Type": "application/json"},
+            )
+            with urllib.request.urlopen(req, timeout=20) as resp:
+                pot_payload = json.loads(resp.read().decode("utf-8"))
+                duration = time.time() - t0
+                has_token = bool(pot_payload.get("poToken"))
+                token_val = pot_payload.get("poToken") or ""
+                token_test = {
+                    "status": "success" if has_token else "missing_token",
+                    "duration_seconds": round(duration, 2),
+                    "has_po_token": has_token,
+                    "po_token_preview": token_val[:35] + ("..." if len(token_val) > 35 else ""),
+                    "content_binding_preview": (pot_payload.get("contentBinding") or "")[:35] + "...",
+                    "expires_at": pot_payload.get("expiresAt"),
+                }
+        except Exception as e:
+            token_test = {
+                "status": "failed",
+                "error": str(e),
+            }
+    else:
+        token_test = {
+            "status": "skipped",
+            "reason": "Provider not listening",
+        }
+    report["step3_token_generation"] = token_test
+
+    # Step 4: Outbound Network Check
+    outbound: Dict[str, Any] = {}
+    try:
+        yt_req = urllib.request.Request("https://www.youtube.com", headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(yt_req, timeout=10) as yt_resp:
+            yt_html = yt_resp.read().decode("utf-8", errors="ignore")
+            outbound["youtube_homepage_status"] = yt_resp.status
+            outbound["html_bytes"] = len(yt_html)
+            outbound["ytAtN_challenge_detected"] = "ytAtN" in yt_html
+            outbound["bot_challenge_redirect"] = "confirm you’re not a bot" in yt_html or "captcha" in yt_html.lower()
+    except Exception as e:
+        outbound["youtube_homepage_error"] = str(e)
+    report["step4_outbound_network"] = outbound
+
+    # Step 5: YouTube Extractor Configuration
+    extractor_args = build_extractor_args()
+    report["step5_extractor_configuration"] = {
+        "extractor_args": extractor_args,
+        "expected_bgutil_arg": "youtubepot-bgutilhttp:base_url=" + pot_manager.url,
+        "player_clients_env": os.environ.get("YOUTUBE_PLAYER_CLIENTS", "(default: visionos, web)"),
+    }
+
+    # Step 6: Real yt-dlp Video Extraction with Verbose Log Capture
+    class DiagnosticLogCapture:
+        def __init__(self):
+            self.lines: List[str] = []
+
+        def debug(self, msg: str):
+            self.lines.append(f"[debug] {msg}")
+
+        def info(self, msg: str):
+            self.lines.append(f"[info] {msg}")
+
+        def warning(self, msg: str):
+            self.lines.append(f"[warning] {msg}")
+
+        def error(self, msg: str):
+            self.lines.append(f"[error] {msg}")
+
+    cap = DiagnosticLogCapture()
+    opts = build_unified_ydl_opts(test_url)
+    opts.update({
+        "logger": cap,
+        "verbose": True,
+        "quiet": False,
+        "no_warnings": False,
+    })
+
+    ext_result: Dict[str, Any] = {}
+    try:
+        ydl = yt_dlp.YoutubeDL(opts)
+        info = ydl.extract_info(test_url, download=False)
+        ext_result["status"] = "success"
+        ext_result["title"] = info.get("title")
+        ext_result["extractor"] = info.get("extractor")
+        ext_result["formats_count"] = len(info.get("formats", []))
+        ext_result["duration"] = info.get("duration")
+    except Exception as e:
+        cat, msg = classify_error(e)
+        ext_result["status"] = "failed"
+        ext_result["error"] = str(e)
+        ext_result["category"] = cat
+        ext_result["clean_message"] = msg
+
+    # Analyze log lines for PO Token activity
+    bgutil_detected = any("PO Token Providers:" in l and "bgutil:http" in l for l in cap.lines)
+    pot_generating = any("[pot:bgutil:http] Generating" in l for l in cap.lines)
+    pot_retrieved = any("Retrieved a" in l and "PO Token" in l for l in cap.lines)
+
+    ext_result["bgutil_provider_detected_in_ytdlp"] = bgutil_detected
+    ext_result["po_token_generating_logged"] = pot_generating
+    ext_result["po_token_retrieved_logged"] = pot_retrieved
+    ext_result["log_capture_lines"] = cap.lines
+    report["step6_actual_test"] = ext_result
+
+    # Final Root Cause Classification
+    if not listening or not ping_ok:
+        report["root_cause_classification"] = "CATEGORY_A_APPLICATION_CONFIG: BGUtil provider process is not listening or ping failed on loopback."
+    elif token_test.get("status") != "success":
+        report["root_cause_classification"] = "CATEGORY_B_BGUTIL_FAILURE: BGUtil server is reachable on /ping, but failed to generate a PO Token via /get_pot."
+    elif ext_result.get("status") != "success" and "confirm you’re not a bot" in str(ext_result.get("error", "")).lower():
+        report["root_cause_classification"] = "CATEGORY_C_YOUTUBE_DATACENTER_IP_ENFORCEMENT: BGUtil server and token generation are functional, but YouTube anti-bot infrastructure has blocked this datacenter IP range."
+    elif ext_result.get("status") == "success":
+        report["root_cause_classification"] = "SUCCESS: Full extraction pipeline functional. BGUtil generated PO token and YouTube returned formats."
+    else:
+        report["root_cause_classification"] = f"OTHER: {ext_result.get('error')}"
+
+    return report
+
+@app.get("/api/diagnostics/live")
+async def api_diagnostics_live(url: str = "https://www.youtube.com/shorts/HEOC4hUu6vU"):
+    """Execute live container diagnostic suite (Steps 1 through 6) inside Render environment."""
+    return run_live_diagnostics(url)
+
 @app.get("/terms")
 async def get_terms():
     """Serve Terms & Conditions page."""
