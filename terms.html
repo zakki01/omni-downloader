@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Terms &amp; Conditions — Omni Downloader</title>
+  <meta name="description" content="Terms of Service and Conditions for Omni Downloader.">
+  <style>
+    :root {
+      --bg-base: #050505;
+      --bg-ambient: radial-gradient(ellipse at 50% -10%, rgba(212, 175, 55, 0.07) 0%, rgba(12, 12, 12, 0.6) 45%, #050505 100%);
+      --surface-1: #111111;
+      --surface-2: #151515;
+      --surface-elevated: #191919;
+      --gold-light: #E6C766;
+      --gold-main: #D4AF37;
+      --gold-dark: #C9A227;
+      --border-gold-subtle: rgba(212, 175, 55, 0.18);
+      --border-subtle: rgba(255, 255, 255, 0.06);
+      --text-main: #F5F5F0;
+      --text-secondary: #A6A6A0;
+      --text-dim: #686862;
+      --radius-sm: 8px;
+      --radius-md: 14px;
+      --radius-lg: 20px;
+      --radius-full: 9999px;
+      --shadow-spatial: 0 24px 60px -12px rgba(0, 0, 0, 0.9), 0 8px 24px -6px rgba(0, 0, 0, 0.7), inset 0 1px 0 rgba(230, 199, 102, 0.1);
+      --transition-smooth: all 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    *, *::before, *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      min-height: 100vh;
+      background-color: var(--bg-base);
+      background-image: var(--bg-ambient);
+      background-attachment: fixed;
+      color: var(--text-main);
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Segoe UI", Roboto, Helvetica, sans-serif;
+      -webkit-font-smoothing: antialiased;
+      line-height: 1.6;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 3.5rem 1.5rem 2.5rem 1.5rem;
+    }
+
+    .doc-shell {
+      width: 100%;
+      max-width: 860px;
+      display: flex;
+      flex-direction: column;
+      gap: 2rem;
+    }
+
+    .header-nav {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid var(--border-gold-subtle);
+      padding-bottom: 1.25rem;
+    }
+
+    .brand-link {
+      font-size: 0.85rem;
+      font-weight: 700;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      color: var(--gold-main);
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      transition: var(--transition-smooth);
+    }
+
+    .brand-link:hover {
+      color: var(--gold-light);
+    }
+
+    .brand-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--gold-main);
+      box-shadow: 0 0 6px var(--gold-main);
+    }
+
+    .back-btn {
+      font-size: 0.825rem;
+      font-weight: 600;
+      color: var(--text-secondary);
+      background: var(--surface-1);
+      border: 1px solid var(--border-gold-subtle);
+      padding: 0.45rem 1rem;
+      border-radius: var(--radius-full);
+      text-decoration: none;
+      transition: var(--transition-smooth);
+    }
+
+    .back-btn:hover {
+      color: var(--text-main);
+      border-color: var(--gold-main);
+      background: var(--surface-2);
+    }
+
+    .content-card {
+      background: var(--surface-1);
+      border: 1px solid var(--border-gold-subtle);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-spatial);
+      padding: 2.5rem;
+      display: flex;
+      flex-direction: column;
+      gap: 1.75rem;
+    }
+
+    h1 {
+      font-size: 2rem;
+      font-weight: 700;
+      letter-spacing: -0.03em;
+      color: var(--text-main);
+    }
+
+    .updated-badge {
+      font-size: 0.75rem;
+      color: var(--gold-main);
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    .legal-notice {
+      background: rgba(212, 175, 55, 0.07);
+      border-left: 3px solid var(--gold-main);
+      padding: 0.85rem 1.25rem;
+      border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+      font-size: 0.85rem;
+      color: var(--gold-light);
+      line-height: 1.5;
+    }
+
+    section {
+      display: flex;
+      flex-direction: column;
+      gap: 0.6rem;
+    }
+
+    h2 {
+      font-size: 1.15rem;
+      font-weight: 600;
+      color: var(--gold-light);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+      padding-bottom: 0.35rem;
+    }
+
+    p, li {
+      font-size: 0.925rem;
+      color: var(--text-secondary);
+      line-height: 1.6;
+    }
+
+    ul {
+      padding-left: 1.35rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.4rem;
+    }
+
+    .highlight-box {
+      background: rgba(239, 68, 68, 0.08);
+      border: 1px solid rgba(239, 68, 68, 0.25);
+      border-radius: var(--radius-sm);
+      padding: 0.85rem 1.15rem;
+      font-size: 0.9rem;
+      color: #fca5a5;
+    }
+
+    footer {
+      border-top: 1px solid var(--border-subtle);
+      padding-top: 1.5rem;
+      text-align: center;
+      font-size: 0.775rem;
+      color: var(--text-dim);
+    }
+
+    @media (max-width: 768px) {
+      body {
+        padding: 1.5rem 1rem;
+      }
+      .content-card {
+        padding: 1.5rem;
+      }
+      h1 {
+        font-size: 1.6rem;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="doc-shell">
+    
+    <nav class="header-nav" aria-label="Page Navigation">
+      <a href="/" class="brand-link">
+        <span class="brand-dot" aria-hidden="true"></span>
+        Omni Downloader
+      </a>
+      <a href="/" class="back-btn">&larr; Return to App</a>
+    </nav>
+
+    <article class="content-card">
+      <div>
+        <span class="updated-badge">Last Updated: October 2026</span>
+        <h1>Terms &amp; Conditions</h1>
+      </div>
+
+      <div class="legal-notice">
+        <strong>Notice:</strong> These Terms &amp; Conditions represent general operational terms for the Omni Downloader prototype and should be formally reviewed by qualified legal counsel prior to commercial launch or production deployment.
+      </div>
+
+      <section>
+        <h2>1. Service Description</h2>
+        <p>Omni Downloader is a technical media retrieval utility designed to process publicly accessible or otherwise authorized media URLs and retrieve supported media formats for direct user download.</p>
+      </section>
+
+      <section>
+        <h2>2. User Responsibility &amp; Authorization</h2>
+        <p>Users are solely responsible for the URLs and content they submit to the service. By using Omni Downloader, you warrant and represent that:</p>
+        <ul>
+          <li>You possess all necessary rights, licenses, permissions, or legal authority to access, process, and retain the submitted content.</li>
+          <li>Your use complies with all applicable local, national, and international laws, copyright regulations, intellectual property laws, and the terms of service of the third-party platforms hosting the content.</li>
+        </ul>
+      </section>
+
+      <section>
+        <h2>3. Prohibited Use &amp; DRM Policy</h2>
+        <p>Omni Downloader strictly prohibits any unlawful or abusive use of the platform. You agree that you will not use the service to:</p>
+        <ul>
+          <li>Download copyrighted material without explicit authorization or valid fair use rights.</li>
+          <li>Circumvent Digital Rights Management (DRM), access controls, or technical protection measures.</li>
+          <li>Bypass paywalls, user authentication systems, geoblocks, or private account restrictions.</li>
+          <li>Download non-public or confidential media without authorization.</li>
+          <li>Bypass CAPTCHAs, bot detections, or rate limitations.</li>
+          <li>Distribute, broadcast, or commercially exploit content without appropriate rights.</li>
+          <li>Interfere with, disrupt, or place an unreasonable load on the service infrastructure.</li>
+        </ul>
+        <div class="highlight-box">
+          <strong>DRM Statement:</strong> Omni Downloader does not provide DRM decryption, key extraction, license acquisition, or DRM circumvention of any kind. Content protected by Widevine, PlayReady, FairPlay, or other encrypted DRM technologies cannot and will not be processed.
+        </div>
+      </section>
+
+      <section>
+        <h2>4. Third-Party Platforms</h2>
+        <p>Omni Downloader does not own, operate, or control the third-party websites or services from which media is retrieved. Availability, format structures, protocol access, and authentication requirements are determined solely by those third parties and are subject to immediate change without notice. Omni Downloader makes no representation or warranty that any specific URL or platform will be supported.</p>
+      </section>
+
+      <section>
+        <h2>5. Downloads &amp; Temporary Storage</h2>
+        <p>Files processed by the service may be temporarily cached on the server filesystem solely to facilitate extraction, format merging, and browser delivery. All processed files are subject to automated deletion after a limited period (e.g., 1 hour). Users are solely responsible for saving and safely storing files they are authorized to retain.</p>
+      </section>
+
+      <section>
+        <h2>6. Cookies &amp; Authentication</h2>
+        <p>Where optional user-provided cookie authentication is utilized, users must only supply cookies for accounts and content they are legally authorized to access. Cookie values and authorization credentials are never logged, exposed via APIs, or transferred to third parties.</p>
+      </section>
+
+      <section>
+        <h2>7. Disclaimer of Warranties</h2>
+        <p>The service is provided on an &ldquo;AS IS&rdquo; and &ldquo;AS AVAILABLE&rdquo; basis without warranties of any kind, whether express or implied. Omni Downloader does not warrant that:</p>
+        <ul>
+          <li>Every URL or website will be supported or accessible.</li>
+          <li>Every initiated download will complete without error.</li>
+          <li>Specific resolutions, bitrates, or audio codecs will be available.</li>
+          <li>The service will operate uninterrupted, timely, or secure.</li>
+        </ul>
+      </section>
+
+      <section>
+        <h2>8. Intellectual Property</h2>
+        <p>All software, interface designs, trademarks, and branding associated with Omni Downloader are the intellectual property of the operator. Using this service to download media does not transfer intellectual property rights, licenses, or ownership of third-party content to the user.</p>
+      </section>
+
+      <section>
+        <h2>9. Rate Limiting &amp; Abuse Prevention</h2>
+        <p>To preserve infrastructure stability, the operator enforces automated rate limiting and reserves the right to suspend or block IP addresses that exhibit abusive, malicious, or automated scraping patterns. Any attempt to bypass security or rate-limiting controls is strictly prohibited.</p>
+      </section>
+
+      <section>
+        <h2>10. Indemnification</h2>
+        <p>You agree to indemnify, defend, and hold harmless Omni Downloader, its operators, contributors, and hosting providers from any claims, damages, liabilities, costs, or expenses (including legal fees) arising from your submission of URLs, retention of content, or violation of these Terms.</p>
+      </section>
+
+      <section>
+        <h2>11. Limitation of Liability</h2>
+        <p>To the maximum extent permitted by applicable law, Omni Downloader and its operators shall not be liable for any indirect, incidental, consequential, special, or punitive damages arising from the use or inability to use the service, including data loss or copyright claims.</p>
+      </section>
+
+      <section>
+        <h2>12. Modifications to Terms</h2>
+        <p>These Terms may be revised at any time. Continued use of Omni Downloader following the posting of updated terms constitutes your binding acceptance of such revisions.</p>
+      </section>
+
+      <section>
+        <h2>13. Contact</h2>
+        <p>For questions or inquiries regarding these Terms &amp; Conditions, please contact: <code style="color: var(--gold-light);">legal@example.com</code> (placeholder &mdash; update prior to production launch).</p>
+      </section>
+    </article>
+
+    <footer>
+      &copy; 2026 Omni Downloader. All rights reserved. &bull; <a href="/privacy" style="color: var(--text-secondary); text-decoration: none;">Privacy Policy</a>
+    </footer>
+
+  </div>
+</body>
+</html>

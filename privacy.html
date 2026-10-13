@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Privacy Policy — Omni Downloader</title>
+  <meta name="description" content="Privacy Policy and Data Handling Practices for Omni Downloader.">
+  <style>
+    :root {
+      --bg-base: #050505;
+      --bg-ambient: radial-gradient(ellipse at 50% -10%, rgba(212, 175, 55, 0.07) 0%, rgba(12, 12, 12, 0.6) 45%, #050505 100%);
+      --surface-1: #111111;
+      --surface-2: #151515;
+      --surface-elevated: #191919;
+      --gold-light: #E6C766;
+      --gold-main: #D4AF37;
+      --gold-dark: #C9A227;
+      --border-gold-subtle: rgba(212, 175, 55, 0.18);
+      --border-subtle: rgba(255, 255, 255, 0.06);
+      --text-main: #F5F5F0;
+      --text-secondary: #A6A6A0;
+      --text-dim: #686862;
+      --radius-sm: 8px;
+      --radius-md: 14px;
+      --radius-lg: 20px;
+      --radius-full: 9999px;
+      --shadow-spatial: 0 24px 60px -12px rgba(0, 0, 0, 0.9), 0 8px 24px -6px rgba(0, 0, 0, 0.7), inset 0 1px 0 rgba(230, 199, 102, 0.1);
+      --transition-smooth: all 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    *, *::before, *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      min-height: 100vh;
+      background-color: var(--bg-base);
+      background-image: var(--bg-ambient);
+      background-attachment: fixed;
+      color: var(--text-main);
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Segoe UI", Roboto, Helvetica, sans-serif;
+      -webkit-font-smoothing: antialiased;
+      line-height: 1.6;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 3.5rem 1.5rem 2.5rem 1.5rem;
+    }
+
+    .doc-shell {
+      width: 100%;
+      max-width: 860px;
+      display: flex;
+      flex-direction: column;
+      gap: 2rem;
+    }
+
+    .header-nav {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid var(--border-gold-subtle);
+      padding-bottom: 1.25rem;
+    }
+
+    .brand-link {
+      font-size: 0.85rem;
+      font-weight: 700;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      color: var(--gold-main);
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      transition: var(--transition-smooth);
+    }
+
+    .brand-link:hover {
+      color: var(--gold-light);
+    }
+
+    .brand-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--gold-main);
+      box-shadow: 0 0 6px var(--gold-main);
+    }
+
+    .back-btn {
+      font-size: 0.825rem;
+      font-weight: 600;
+      color: var(--text-secondary);
+      background: var(--surface-1);
+      border: 1px solid var(--border-gold-subtle);
+      padding: 0.45rem 1rem;
+      border-radius: var(--radius-full);
+      text-decoration: none;
+      transition: var(--transition-smooth);
+    }
+
+    .back-btn:hover {
+      color: var(--text-main);
+      border-color: var(--gold-main);
+      background: var(--surface-2);
+    }
+
+    .content-card {
+      background: var(--surface-1);
+      border: 1px solid var(--border-gold-subtle);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-spatial);
+      padding: 2.5rem;
+      display: flex;
+      flex-direction: column;
+      gap: 1.75rem;
+    }
+
+    h1 {
+      font-size: 2rem;
+      font-weight: 700;
+      letter-spacing: -0.03em;
+      color: var(--text-main);
+    }
+
+    .updated-badge {
+      font-size: 0.75rem;
+      color: var(--gold-main);
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    .legal-notice {
+      background: rgba(212, 175, 55, 0.07);
+      border-left: 3px solid var(--gold-main);
+      padding: 0.85rem 1.25rem;
+      border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+      font-size: 0.85rem;
+      color: var(--gold-light);
+      line-height: 1.5;
+    }
+
+    section {
+      display: flex;
+      flex-direction: column;
+      gap: 0.6rem;
+    }
+
+    h2 {
+      font-size: 1.15rem;
+      font-weight: 600;
+      color: var(--gold-light);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+      padding-bottom: 0.35rem;
+    }
+
+    p, li {
+      font-size: 0.925rem;
+      color: var(--text-secondary);
+      line-height: 1.6;
+    }
+
+    ul {
+      padding-left: 1.35rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.4rem;
+    }
+
+    footer {
+      border-top: 1px solid var(--border-subtle);
+      padding-top: 1.5rem;
+      text-align: center;
+      font-size: 0.775rem;
+      color: var(--text-dim);
+    }
+
+    @media (max-width: 768px) {
+      body {
+        padding: 1.5rem 1rem;
+      }
+      .content-card {
+        padding: 1.5rem;
+      }
+      h1 {
+        font-size: 1.6rem;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="doc-shell">
+    
+    <nav class="header-nav" aria-label="Page Navigation">
+      <a href="/" class="brand-link">
+        <span class="brand-dot" aria-hidden="true"></span>
+        Omni Downloader
+      </a>
+      <a href="/" class="back-btn">&larr; Return to App</a>
+    </nav>
+
+    <article class="content-card">
+      <div>
+        <span class="updated-badge">Last Updated: October 2026</span>
+        <h1>Privacy Policy</h1>
+      </div>
+
+      <div class="legal-notice">
+        <strong>Notice:</strong> This Privacy Policy outlines the operational and technical data handling practices of Omni Downloader. It should be reviewed by legal counsel before commercial use.
+      </div>
+
+      <section>
+        <h2>1. Overview &amp; Data Philosophy</h2>
+        <p>Omni Downloader is built around a privacy-preserving, minimal-retention architecture. We do not maintain user accounts, require registration, track behavioral profiles, or sell any user information.</p>
+      </section>
+
+      <section>
+        <h2>2. Data We Process</h2>
+        <p>In order to provide media extraction and download services, the application processes the following data:</p>
+        <ul>
+          <li><strong>Submitted URLs:</strong> URLs provided via the input interface are processed in real-time by the backend to query media extractors and retrieve stream manifests. These URLs are not compiled into user profiles.</li>
+          <li><strong>IP Addresses &amp; Rate Limiting:</strong> Client IP addresses are stored temporarily in volatile memory using an in-memory sliding window (5 requests per minute) strictly to defend infrastructure against automated denial-of-service attacks. These records are not persistently written to databases.</li>
+          <li><strong>Temporary Media Files:</strong> When a download is initiated, media streams are assembled into temporary files in the server filesystem (<code>./downloads/</code>) strictly for immediate retrieval by your browser.</li>
+          <li><strong>Server Technical Logs:</strong> Standard HTTP request logs (method, path, status code, error category) are maintained server-side for system health monitoring and debugging. These logs never contain passwords, tokens, or cookie credentials.</li>
+        </ul>
+      </section>
+
+      <section>
+        <h2>3. Authentication &amp; Cookies</h2>
+        <p>Omni Downloader supports optional local cookie files (<code>cookies.txt</code>) for users retrieving media from accounts they are authorized to access. When present:</p>
+        <ul>
+          <li>Cookie contents are utilized strictly within local worker threads to communicate with authorized extractors.</li>
+          <li>Cookies are never stored in databases, never transmitted to advertising networks, and never exposed via web APIs or static endpoints.</li>
+        </ul>
+      </section>
+
+      <section>
+        <h2>4. Third-Party Technologies</h2>
+        <p>Media extraction and conversion relies on open-source libraries (<code>yt-dlp</code> and <code>FFmpeg</code>). When a URL is processed, the backend connects directly to the hosting server of that URL. Third-party hosting servers may log standard connection headers according to their respective privacy policies.</p>
+      </section>
+
+      <section>
+        <h2>5. Data Retention &amp; Disposal</h2>
+        <p>Omni Downloader practices automated data disposal:</p>
+        <ul>
+          <li>Temporary media files are automatically removed from the server within <strong>1 hour</strong> of creation by a background cleanup routine.</li>
+          <li>In-memory rate limit timestamps expire continuously after 60 seconds.</li>
+          <li>On cloud hosting environments (such as Render Free tier), disk storage is ephemeral and is cleared on container redeployments or restarts.</li>
+        </ul>
+      </section>
+
+      <section>
+        <h2>6. Security Measures</h2>
+        <p>We implement multiple security safeguards to prevent data leakage and system abuse:</p>
+        <ul>
+          <li>Server-Side Request Forgery (SSRF) filters preventing queries to internal/private networks.</li>
+          <li>Path traversal prevention and automatic filename sanitization.</li>
+          <li>No client-accessible directory browsing for downloaded files.</li>
+        </ul>
+      </section>
+
+      <section>
+        <h2>7. Contact</h2>
+        <p>For questions or privacy concerns regarding this policy, please reach out to: <code style="color: var(--gold-light);">privacy@example.com</code> (placeholder &mdash; update prior to production deployment).</p>
+      </section>
+    </article>
+
+    <footer>
+      &copy; 2026 Omni Downloader. All rights reserved. &bull; <a href="/terms" style="color: var(--text-secondary); text-decoration: none;">Terms &amp; Conditions</a>
+    </footer>
+
+  </div>
+</body>
+</html>

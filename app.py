@@ -657,6 +657,22 @@ async def health_check():
     """Health check endpoint for Render and container orchestrators."""
     return {"status": "ok"}
 
+@app.get("/terms")
+async def get_terms():
+    """Serve Terms & Conditions page."""
+    terms_file = BASE_DIR / "terms.html"
+    if not terms_file.is_file():
+        raise HTTPException(status_code=404, detail="terms.html not found")
+    return FileResponse(terms_file, media_type="text/html")
+
+@app.get("/privacy")
+async def get_privacy():
+    """Serve Privacy Policy page."""
+    privacy_file = BASE_DIR / "privacy.html"
+    if not privacy_file.is_file():
+        raise HTTPException(status_code=404, detail="privacy.html not found")
+    return FileResponse(privacy_file, media_type="text/html")
+
 @app.get("/")
 async def get_index():
     """Serve the single-page vanilla web interface."""

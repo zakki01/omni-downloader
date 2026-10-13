@@ -8,9 +8,9 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 # Set production working directory
 WORKDIR /app
 
-# Install FFmpeg and curl via OS package manager
+# Install FFmpeg, curl, and CA certificates via OS package manager
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends ffmpeg curl && \
+    apt-get install -y --no-install-recommends ffmpeg curl ca-certificates && \
     rm -rf /var/lib/apt/lists/*
 
 # Copy requirements first for Docker layer caching

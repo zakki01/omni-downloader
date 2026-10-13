@@ -24,6 +24,24 @@ def test_root_endpoint():
     assert "Omni Downloader" in text
     assert "#D4AF37" in text
     assert "#050505" in text
+    assert "/terms" in text
+    assert "/privacy" in text
+
+def test_terms_endpoint():
+    res = client.get("/terms")
+    assert res.status_code == 200
+    text = res.text
+    assert "Terms &amp; Conditions" in text or "Terms & Conditions" in text
+    assert "DRM" in text
+    assert "#D4AF37" in text
+
+def test_privacy_endpoint():
+    res = client.get("/privacy")
+    assert res.status_code == 200
+    text = res.text
+    assert "Privacy Policy" in text
+    assert "Data We Process" in text
+    assert "#D4AF37" in text
 
 def test_invalid_url_schemes():
     reset_limiter()

@@ -701,6 +701,50 @@
         width: 100%;
       }
     }
+
+    /* ----------------------------------------------------------------------- */
+    /* Minimal Luxury Footer                                                   */
+    /* ----------------------------------------------------------------------- */
+    .app-footer {
+      width: 100%;
+      max-width: 760px;
+      margin-top: 1.5rem;
+      padding-top: 1.5rem;
+      border-top: 1px solid var(--border-subtle);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.5rem;
+      font-size: 0.8rem;
+      color: var(--text-dim);
+    }
+
+    .footer-nav {
+      display: flex;
+      align-items: center;
+      gap: 0.85rem;
+    }
+
+    .footer-link {
+      color: var(--text-secondary);
+      text-decoration: none;
+      transition: var(--transition-smooth);
+    }
+
+    .footer-link:hover {
+      color: var(--gold-main);
+    }
+
+    .footer-dot {
+      color: var(--border-gold-subtle);
+      font-size: 0.75rem;
+    }
+
+    .footer-copy {
+      color: var(--text-dim);
+      font-size: 0.75rem;
+      letter-spacing: 0.02em;
+    }
   </style>
 </head>
 <body>
@@ -836,6 +880,16 @@
         </div>
       </div>
     </article>
+
+    <!-- Luxury Minimal Footer -->
+    <footer class="app-footer">
+      <nav class="footer-nav" aria-label="Footer links">
+        <a href="/terms" class="footer-link">Terms &amp; Conditions</a>
+        <span class="footer-dot" aria-hidden="true">&bull;</span>
+        <a href="/privacy" class="footer-link">Privacy Policy</a>
+      </nav>
+      <p class="footer-copy">&copy; 2026 Omni Downloader. All rights reserved.</p>
+    </footer>
 
   </div>
 
