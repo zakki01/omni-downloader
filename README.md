@@ -115,17 +115,18 @@ Navigate to `http://localhost:8000` to verify the UI and test downloads.
 |---|---|---|
 | `PORT` | `8000` | Port on which the Uvicorn web server listens (injected dynamically by Render). |
 | `PYTHONUNBUFFERED` | `1` | Ensures real-time stdout/stderr log output in Docker containers. |
-| `YOUTUBE_PO_TOKEN` | *None* | Proof of Origin (PO) token / GVS credentials string (e.g. `web.gvs+TOKEN` or `TOKEN`) for modern YouTube extraction. |
+| `POT_PROVIDER_URL` | *None (`http://127.0.0.1:4416`)* | URL of the local or internal PO Token Provider server. |
+| `YOUTUBE_PO_TOKEN` | *None* | Fallback manual Proof of Origin (PO) token / GVS credentials string (e.g. `web.gvs+TOKEN` or `TOKEN`). |
 | `YOUTUBE_PLAYER_CLIENTS` | *None (default)* | Comma-separated list of player clients (e.g. `android,web,mweb`). |
 | `COOKIES_FILE_PATH` | *None* | Absolute path to a Netscape-formatted `cookies.txt` file on the server. |
-| `YOUTUBE_COOKIES_TEXT` | *None* | Raw Netscape cookies text content passed directly via environment variable (useful for container PaaS). |
+| `YOUTUBE_COOKIES_TEXT` | *None* | Raw Netscape cookies text content passed directly via environment variable. |
 
 ---
 
 ## YouTube Extraction & Cloud / Datacenter Deployments
 
 ### The Datacenter IP Challenge
-Major cloud hosting providers (Render, AWS, GCP, DigitalOcean, Hetzner) host IP ranges that are heavily monitored and challenged by YouTube's automated bot protection systems. When a server on these ranges requests YouTube metadata without authorization or a browser session, YouTube returns:
+Major cloud hosting providers (Render, AWS, GCP, DigitalOcean, Hetzner) operate IP ranges that are actively monitored and challenged by YouTube's automated bot protection systems. When an unauthenticated server request originates from these cloud ranges, YouTube returns:
 
 ```text
 ERROR: [youtube] <video_id>: Sign in to confirm you’re not a bot.
@@ -134,93 +135,41 @@ Use --cookies-from-browser or --cookies for the authentication.
 
 Omni Downloader adheres strictly to ethical, legal, and security guidelines:
 - **No CAPTCHA bypass**: We do not implement automated CAPTCHA solvers or anti-bot circumvention hacks.
-- **Accurate Error Messaging**: When YouTube triggers a bot verification challenge, Omni Downloader returns a clear, transparent message:
-  > *"YouTube is currently requiring additional verification for this request. This server cannot bypass that protection. Try another supported URL or configure authorized YouTube access for the server."*
-- **No False DRM Claims**: Bot verification errors are cleanly distinguished from DRM encryption errors.
+- **Accurate Error Messaging**: When YouTube triggers a bot verification challenge, Omni Downloader returns a concise, clear explanation:
+  > *"YouTube requires additional verification for this server request. Please try again later or use another supported source."*
+- **No False DRM Claims**: Bot challenges are strictly classified and never mislabeled as DRM.
 
-### Configuring Authorized Access on Render
+### The Smart Production Architecture
 
-If you are running Omni Downloader on Render or another cloud provider and wish to enable YouTube extraction:
+Omni Downloader isolates YouTube extraction using a provider-aware architecture:
 
-#### 1. PO Token Configuration (Recommended)
-You can supply a PO Token generated in a browser session via the `YOUTUBE_PO_TOKEN` environment variable in the Render Dashboard:
-```text
-YOUTUBE_PO_TOKEN=web.gvs+<YOUR_BASE64_PO_TOKEN>
-```
-For details on generating a PO Token, consult the [yt-dlp PO-Token Guide](https://github.com/yt-dlp/yt-dlp/wiki/PO-Token-Guide).
-
-#### 2. Supplying Cookies via Render Secret Files
-Render provides a **Secret Files** feature:
-1. Export a Netscape `cookies.txt` file from your browser (e.g., using a browser extension like *Get cookies.txt LOCALLY*).
-2. In the Render Dashboard under **Environment** > **Secret Files**, add a file with filename `cookies.txt` and contents of your exported cookies.
-3. Render automatically mounts Secret Files to `/etc/secrets/cookies.txt`, which Omni Downloader automatically detects at startup without exposing credentials or requiring manual path configuration.
-
-#### 3. Supplying Cookies via Environment Variable
-Alternatively, paste the contents of your `cookies.txt` file directly into the `YOUTUBE_COOKIES_TEXT` environment variable in Render. Omni Downloader will write this securely to a local, gitignored cache file.
-
-*Never commit `cookies.txt` or personal authentication tokens to public repositories.*
-
----
-
-## Security
-
-- **SSRF Defense**: Evaluates all URLs and downstream HTTP redirects. Strictly blocks connections targeting `localhost`, `127.0.0.0/8`, `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `169.254.169.254`, `::1`, link-local, and reserved IP ranges.
-- **Path Traversal & Filename Sanitization**: Strips dangerous filesystem tokens (`/`, `\`, `:`, `*`, `?`, `"`, `<`, `>`, `|`) and directory traversal sequences (`..`). Files are safely isolated in `./downloads/`.
-- **Rate Limiting**: Limits requests on `/api/info` and `/api/download` to 5 requests per minute per IP address.
-- **DRM Protection**: Omni Downloader does not decrypt or circumvent Widevine, PlayReady, or FairPlay DRM. Content identified with DRM protection returns a clean, explanatory error.
-- **Credential Protection**: Optional authentication files (such as `cookies.txt`) are excluded from Git and Docker images via `.gitignore` and `.dockerignore`, and are never exposed via APIs or static routes.
-
----
-
-## Legal & Responsible Use
-
-Omni Downloader is a technical tool designed solely for personal media archiving and retrieval of publicly accessible or authorized content. Users are strictly responsible for ensuring they possess the necessary rights, licenses, or authorizations to process and download submitted content.
-
-Please review our policies:
-- [Terms & Conditions](/terms)
-- [Privacy Policy](/privacy)
-
----
-
-## Deployment to Render
-
-You can deploy Omni Downloader directly to Render as a Docker Web Service:
-
-### Method 1: Render Blueprint (`render.yaml` - Recommended)
-
-1. Push this repository to your GitHub account.
-2. Go to the [Render Dashboard](https://dashboard.render.com/) and select **New +** > **Blueprint**.
-3. Connect your repository.
-4. Render will read `render.yaml`, configure the Docker container, and deploy the service.
-
-### Method 2: Manual Web Service
-
-1. On the Render Dashboard, click **New +** > **Web Service**.
-2. Connect your GitHub repository.
-3. Select **Docker** as the Environment.
-4. Leave Root Directory and Build/Start commands default (handled by `Dockerfile`).
-5. Set Health Check Path to `/health`.
-6. Click **Create Web Service**.
-
-> **Important Storage Notice:** Render's free tier uses an ephemeral filesystem. Processed files are temporarily stored for immediate retrieval and automatically deleted after 1 hour. Files do not persist across instance redeployments, restarts, or sleep cycles.
+1. **JavaScript Challenge Solver (`yt-dlp-ejs`)**:
+   Runs using bundled Deno or Node.js >= 22 inside the Docker container to solve signature ciphering and `n` challenges.
+2. **Dynamic PO Token Provider (`bgutil-ytdlp-pot-provider`)**:
+   Rather than relying on static, hardcoded tokens that expire, Omni Downloader integrates the `bgutil-ytdlp-pot-provider` plugin and runs a local, unexposed HTTP provider server on `127.0.0.1:4416` inside the container.
+3. **Optional Authorized Access Fallback (`cookies.txt`)**:
+   - Render Secret Files: Add a Secret File named `cookies.txt` in the Render Dashboard. It is automatically mounted at `/etc/secrets/cookies.txt` and detected on startup.
+   - Alternatively, pass the raw cookie contents via `YOUTUBE_COOKIES_TEXT`.
+   - Never commit cookies to GitHub or Docker images.
 
 ---
 
 ## Limitations
 
-- **Platform Compatibility**: Compatibility is subject to `yt-dlp` extractors. Third-party platforms frequently change their stream formats, and not every URL is guaranteed to work.
-- **DRM Content**: DRM-protected videos cannot be downloaded.
-- **Ephemeral Storage**: Not designed as a permanent media host or storage archive.
+- **Platform Compatibility**: Compatibility with third-party platforms can change without notice. Omni Downloader does not claim to support every website or private service.
+- **DRM Content**: DRM-protected media (Widevine, PlayReady, FairPlay) is strictly rejected and cannot be downloaded.
+- **Ephemeral Storage**: Render Web Services operate on an ephemeral filesystem. Downloaded files are temporarily stored for immediate retrieval and automatically purged after 1 hour. Files do not persist across instance restarts or sleep cycles.
+- **Single-Instance In-Memory State**: Active job tracking is currently managed in-memory via `InMemoryJobStore`. For multi-instance scaling, Redis will be introduced in Phase 4.
 
 ---
 
 ## Roadmap
 
-- **Phase 1 (Current)**: Core `yt-dlp` downloader with FFmpeg integration, Black + Gold UI, and Docker/Render configuration.
-- **Phase 2**: Playwright headless browser fallback for JS-rendered players.
+- **Phase 1 (Completed)**: Core downloader with FFmpeg integration, Black + Gold UI, Docker/Render multi-stage container, EJS solver, and PO Token Provider architecture.
+- **Phase 2**: `BrowserExtractor` extension point backed by headless Playwright for JS-rendered players.
 - **Phase 3**: Playlist discovery, batch resolution, and multi-file selection.
-- **Phase 4**: Redis-backed persistent job queue with distributed background workers.
-- **Phase 5**: Object storage integration (S3/GCS) and user quotas for horizontal production scaling.
+- **Phase 4**: `RedisJobStore` for horizontal multi-instance queueing.
+- **Phase 5**: `S3Storage` backend for persistent cloud object storage (AWS S3 / GCS).
 
 ---
 

@@ -1,17 +1,28 @@
 import os
 from starlette.testclient import TestClient
 from app import (
+    BrowserExtractor,
+    ErrorCategory,
+    InMemoryJobStore,
+    LocalStorage,
+    MediaExtractor,
+    YouTubeExtractor,
+    YtDlpExtractor,
     app,
     build_format_selector,
     build_ydl_base_opts,
     categorize_error,
+    classify_error,
     detect_bot_check_error,
     detect_drm_error,
     get_available_heights,
+    get_extractor,
     get_youtube_extractor_args,
     is_youtube_url,
+    job_store,
     rate_limiter,
     sanitize_filename,
+    storage_backend,
 )
 
 client = TestClient(app)
@@ -164,8 +175,7 @@ def test_error_classification_bot_check_vs_drm():
     assert detect_bot_check_error(bot_err_3) is True
 
     cat_msg_1 = categorize_error(bot_err_1)
-    assert "requiring additional verification" in cat_msg_1
-    assert "cannot bypass" in cat_msg_1
+    assert "additional verification" in cat_msg_1
     assert "DRM" not in cat_msg_1  # Crucial: Must NEVER falsely claim DRM
 
     # 2. Genuine DRM error
@@ -186,4 +196,58 @@ def test_build_ydl_base_opts():
 
     generic_opts = build_ydl_base_opts("https://example.com/sample.mp4")
     assert generic_opts["noplaylist"] is True
+
+def test_media_extractor_routing():
+    yt_ext = get_extractor("https://www.youtube.com/watch?v=dQw4w9WgXcQ")
+    assert isinstance(yt_ext, YouTubeExtractor)
+
+    generic_ext = get_extractor("https://example.com/video.mp4")
+    assert isinstance(generic_ext, YtDlpExtractor)
+
+    browser_ext = BrowserExtractor()
+    assert browser_ext.supports("https://anything.com") is False
+
+def test_in_memory_job_store():
+    store = InMemoryJobStore()
+    job = store.create_job("test_job_1")
+    assert job["status"] == "running"
+    assert job["progress"] == 0
+
+    retrieved = store.get_job("test_job_1")
+    assert retrieved is not None
+    assert retrieved["status"] == "running"
+
+    updated = store.update_job("test_job_1", progress=50, status="running")
+    assert updated["progress"] == 50
+
+    cleaned = store.cleanup_jobs(max_age_seconds=0)
+    assert cleaned == 1
+    assert store.get_job("test_job_1") is None
+
+def test_storage_backend_and_sanitization(tmp_path):
+    storage = LocalStorage(tmp_path)
+    test_file = tmp_path / "test_job_2.mp4"
+    test_file.write_text("dummy media content")
+
+    found = storage.get_file_path("test_job_2")
+    assert found == test_file
+
+    storage.delete_job_files("test_job_2")
+    assert not test_file.exists()
+
+def test_detailed_error_classification():
+    cat, msg = classify_error(Exception("sign in to confirm you're not a bot"))
+    assert cat == ErrorCategory.YOUTUBE_BOT_CHALLENGE
+    assert "additional verification" in msg
+
+    cat, msg = classify_error(Exception("mweb client requires a GVS PO Token which was not provided"))
+    assert cat == ErrorCategory.YOUTUBE_PO_TOKEN_REQUIRED
+    assert "proof-of-origin verification" in msg
+
+    cat, msg = classify_error(Exception("Private video. Sign in if you've been granted access."))
+    assert cat == ErrorCategory.YOUTUBE_AUTH_REQUIRED
+
+    cat, msg = classify_error(Exception("This video is DRM-protected and cannot be downloaded."))
+    assert cat == ErrorCategory.DRM_PROTECTED
+
 
