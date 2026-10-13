@@ -1,0 +1,1149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Omni Downloader — Premium Media Retrieval</title>
+  <meta name="description" content="Precision media downloader engineered with luxury black and gold aesthetic.">
+  <style>
+    /* ----------------------------------------------------------------------- */
+    /* Premium Black + Metallic Gold Design Tokens                             */
+    /* ----------------------------------------------------------------------- */
+    :root {
+      /* Backgrounds */
+      --bg-base: #050505;
+      --bg-mid: #080808;
+      --bg-elevated: #0C0C0C;
+      --bg-ambient: radial-gradient(ellipse at 50% -10%, rgba(212, 175, 55, 0.08) 0%, rgba(12, 12, 12, 0.6) 45%, #050505 100%);
+
+      /* Surfaces */
+      --surface-1: #111111;
+      --surface-2: #151515;
+      --surface-elevated: #191919;
+      --surface-highlight: rgba(255, 255, 255, 0.04);
+
+      /* Metallic Gold Palette */
+      --gold-light: #E6C766;
+      --gold-main: #D4AF37;
+      --gold-dark: #C9A227;
+      --gold-muted: #9C7C18;
+      --gold-gradient: linear-gradient(135deg, #E6C766 0%, #D4AF37 50%, #C9A227 100%);
+      --gold-gradient-hover: linear-gradient(135deg, #F3DA8A 0%, #E0BE4C 50%, #D4AF37 100%);
+      --gold-glow: rgba(212, 175, 55, 0.22);
+
+      /* Borders */
+      --border-gold-subtle: rgba(212, 175, 55, 0.18);
+      --border-gold-focus: rgba(212, 175, 55, 0.45);
+      --border-subtle: rgba(255, 255, 255, 0.06);
+
+      /* Typography */
+      --text-main: #F5F5F0;
+      --text-secondary: #A6A6A0;
+      --text-dim: #686862;
+
+      /* Feedback Colors */
+      --danger: #ef4444;
+      --danger-surface: rgba(239, 68, 68, 0.08);
+      --danger-border: rgba(239, 68, 68, 0.25);
+
+      /* Spatial Radius & Shadows */
+      --radius-sm: 8px;
+      --radius-md: 14px;
+      --radius-lg: 20px;
+      --radius-full: 9999px;
+
+      --shadow-spatial: 
+        0 24px 60px -12px rgba(0, 0, 0, 0.9),
+        0 8px 24px -6px rgba(0, 0, 0, 0.7),
+        inset 0 1px 0 rgba(230, 199, 102, 0.1);
+      
+      --shadow-floating: 
+        0 14px 32px -6px rgba(0, 0, 0, 0.8),
+        inset 0 1px 0 rgba(255, 255, 255, 0.05);
+
+      --transition-smooth: all 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    /* ----------------------------------------------------------------------- */
+    /* Resets & Base Typography                                                */
+    /* ----------------------------------------------------------------------- */
+    *, *::before, *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      min-height: 100vh;
+      background-color: var(--bg-base);
+      background-image: var(--bg-ambient);
+      background-attachment: fixed;
+      color: var(--text-main);
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Segoe UI", Roboto, Helvetica, sans-serif;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+      line-height: 1.5;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: flex-start;
+      padding: 3.5rem 1.5rem 2.5rem 1.5rem;
+    }
+
+    /* ----------------------------------------------------------------------- */
+    /* Application Shell Layout                                                */
+    /* ----------------------------------------------------------------------- */
+    .app-shell {
+      width: 100%;
+      max-width: 1100px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 2.25rem;
+    }
+
+    header {
+      text-align: center;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.6rem;
+      max-width: 640px;
+    }
+
+    .brand-tag {
+      font-size: 0.725rem;
+      font-weight: 700;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      color: var(--gold-main);
+      background: var(--surface-1);
+      border: 1px solid var(--border-gold-subtle);
+      padding: 0.4rem 1rem;
+      border-radius: var(--radius-full);
+      box-shadow: inset 0 1px 0 rgba(230, 199, 102, 0.12), 0 4px 12px rgba(0, 0, 0, 0.4);
+      margin-bottom: 0.35rem;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+    }
+
+    .brand-tag-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--gold-main);
+      box-shadow: 0 0 6px var(--gold-main);
+    }
+
+    h1 {
+      font-size: 2.35rem;
+      font-weight: 700;
+      letter-spacing: -0.035em;
+      color: var(--text-main);
+      text-shadow: 0 2px 14px rgba(0, 0, 0, 0.7);
+    }
+
+    h1 span.gold-accent {
+      background: var(--gold-gradient);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .subtitle {
+      font-size: 0.95rem;
+      color: var(--text-secondary);
+      line-height: 1.5;
+    }
+
+    /* ----------------------------------------------------------------------- */
+    /* Spatial URL Input Panel                                                 */
+    /* ----------------------------------------------------------------------- */
+    .fetch-form-container {
+      width: 100%;
+      max-width: 760px;
+      position: relative;
+    }
+
+    .input-glass-panel {
+      display: flex;
+      align-items: center;
+      background: var(--surface-1);
+      border: 1px solid var(--border-gold-subtle);
+      border-radius: var(--radius-md);
+      box-shadow: var(--shadow-spatial);
+      padding: 0.5rem 0.55rem 0.5rem 1.25rem;
+      gap: 0.75rem;
+      transition: var(--transition-smooth);
+    }
+
+    .input-glass-panel:focus-within {
+      border-color: var(--border-gold-focus);
+      box-shadow: var(--shadow-spatial), 0 0 0 2px var(--gold-glow);
+    }
+
+    .url-icon {
+      flex-shrink: 0;
+      color: var(--gold-main);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .url-input {
+      flex: 1;
+      background: transparent;
+      border: none;
+      outline: none;
+      color: var(--text-main);
+      font-size: 1rem;
+      font-family: inherit;
+      min-width: 0;
+    }
+
+    .url-input::placeholder {
+      color: var(--text-dim);
+    }
+
+    .btn-gold-primary {
+      background: var(--gold-gradient);
+      color: #0A0A0A;
+      border: none;
+      outline: none;
+      font-size: 0.925rem;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+      padding: 0.8rem 1.6rem;
+      border-radius: calc(var(--radius-md) - 4px);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      box-shadow: 0 4px 14px rgba(212, 175, 55, 0.25);
+      transition: var(--transition-smooth);
+      flex-shrink: 0;
+    }
+
+    .btn-gold-primary:hover:not(:disabled) {
+      background: var(--gold-gradient-hover);
+      transform: translateY(-1px);
+      box-shadow: 0 6px 20px rgba(212, 175, 55, 0.38);
+    }
+
+    .btn-gold-primary:active:not(:disabled) {
+      transform: translateY(0);
+    }
+
+    .btn-gold-primary:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    /* ----------------------------------------------------------------------- */
+    /* Feedback Banners & Alerts                                               */
+    /* ----------------------------------------------------------------------- */
+    .alert-banner {
+      width: 100%;
+      max-width: 760px;
+      display: none;
+      align-items: center;
+      gap: 0.75rem;
+      padding: 0.85rem 1.25rem;
+      border-radius: var(--radius-sm);
+      font-size: 0.9rem;
+      line-height: 1.45;
+      animation: fadeIn 0.2s ease-out;
+    }
+
+    .alert-banner.error {
+      display: flex;
+      background: var(--danger-surface);
+      border: 1px solid var(--danger-border);
+      color: #fca5a5;
+    }
+
+    .alert-banner.info {
+      display: flex;
+      background: rgba(212, 175, 55, 0.08);
+      border: 1px solid var(--border-gold-subtle);
+      color: var(--gold-light);
+    }
+
+    /* ----------------------------------------------------------------------- */
+    /* Empty State                                                             */
+    /* ----------------------------------------------------------------------- */
+    .empty-state-panel {
+      width: 100%;
+      max-width: 760px;
+      border: 1px dashed var(--border-gold-subtle);
+      border-radius: var(--radius-lg);
+      padding: 3.5rem 1.5rem;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      color: var(--text-dim);
+      gap: 0.85rem;
+      background: rgba(17, 17, 17, 0.4);
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.02);
+    }
+
+    .empty-icon-wrap {
+      width: 52px;
+      height: 52px;
+      border-radius: var(--radius-md);
+      background: var(--surface-1);
+      border: 1px solid var(--border-gold-subtle);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--gold-main);
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+    }
+
+    .empty-state-title {
+      font-size: 0.95rem;
+      font-weight: 600;
+      color: var(--text-secondary);
+    }
+
+    .empty-state-hint {
+      font-size: 0.825rem;
+      max-width: 440px;
+      color: var(--text-dim);
+    }
+
+    /* ----------------------------------------------------------------------- */
+    /* Video Information Card (Spatial Presentation)                           */
+    /* ----------------------------------------------------------------------- */
+    .video-card {
+      width: 100%;
+      max-width: 860px;
+      background: var(--surface-1);
+      border: 1px solid var(--border-gold-subtle);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-spatial);
+      overflow: hidden;
+      display: none;
+      flex-direction: row;
+      animation: slideUp 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    .video-card.active {
+      display: flex;
+    }
+
+    .thumbnail-container {
+      flex: 0 0 380px;
+      position: relative;
+      background: #000;
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .thumbnail-img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+
+    .duration-badge {
+      position: absolute;
+      bottom: 0.75rem;
+      right: 0.75rem;
+      background: rgba(10, 10, 10, 0.85);
+      backdrop-filter: blur(8px);
+      color: var(--gold-light);
+      font-size: 0.75rem;
+      font-weight: 700;
+      padding: 0.25rem 0.6rem;
+      border-radius: 4px;
+      border: 1px solid var(--border-gold-subtle);
+      letter-spacing: 0.05em;
+    }
+
+    .video-details-panel {
+      flex: 1;
+      padding: 1.75rem;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      gap: 1.25rem;
+      min-width: 0;
+      background: linear-gradient(180deg, var(--surface-1) 0%, var(--surface-2) 100%);
+    }
+
+    .video-header-info {
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+
+    .video-title {
+      font-size: 1.2rem;
+      font-weight: 600;
+      line-height: 1.35;
+      color: var(--text-main);
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+      word-break: break-word;
+    }
+
+    .video-meta-tags {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+    }
+
+    .meta-tag {
+      font-size: 0.75rem;
+      color: var(--gold-main);
+      background: rgba(212, 175, 55, 0.08);
+      padding: 0.25rem 0.6rem;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border-gold-subtle);
+    }
+
+    /* Controls inside video card */
+    .action-controls-box {
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+    }
+
+    .control-group {
+      display: flex;
+      flex-direction: column;
+      gap: 0.4rem;
+    }
+
+    .control-label {
+      font-size: 0.775rem;
+      font-weight: 700;
+      color: var(--gold-main);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    .select-wrapper {
+      position: relative;
+    }
+
+    .quality-select {
+      width: 100%;
+      background: var(--surface-2);
+      border: 1px solid var(--border-gold-subtle);
+      border-radius: var(--radius-sm);
+      color: var(--text-main);
+      font-size: 0.95rem;
+      font-family: inherit;
+      padding: 0.8rem 2.25rem 0.8rem 1rem;
+      appearance: none;
+      -webkit-appearance: none;
+      outline: none;
+      cursor: pointer;
+      transition: var(--transition-smooth);
+    }
+
+    .quality-select:focus {
+      border-color: var(--border-gold-focus);
+      box-shadow: 0 0 0 2px var(--gold-glow);
+    }
+
+    .select-arrow {
+      position: absolute;
+      right: 1rem;
+      top: 50%;
+      transform: translateY(-50%);
+      pointer-events: none;
+      color: var(--gold-main);
+    }
+
+    .button-row {
+      display: flex;
+      gap: 0.75rem;
+      align-items: center;
+    }
+
+    .btn-download-start {
+      flex: 1;
+      background: var(--gold-gradient);
+      color: #0A0A0A;
+      border: none;
+      outline: none;
+      font-size: 0.95rem;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+      padding: 0.85rem 1.25rem;
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+      box-shadow: 0 4px 14px rgba(212, 175, 55, 0.25);
+      transition: var(--transition-smooth);
+    }
+
+    .btn-download-start:hover:not(:disabled) {
+      background: var(--gold-gradient-hover);
+      transform: translateY(-1px);
+      box-shadow: 0 6px 20px rgba(212, 175, 55, 0.38);
+    }
+
+    .btn-download-start:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    .btn-secondary {
+      background: var(--surface-2);
+      color: var(--text-secondary);
+      border: 1px solid var(--border-gold-subtle);
+      padding: 0.85rem 1.2rem;
+      border-radius: var(--radius-sm);
+      font-size: 0.9rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: var(--transition-smooth);
+    }
+
+    .btn-secondary:hover {
+      background: var(--surface-elevated);
+      color: var(--text-main);
+      border-color: var(--border-gold-focus);
+    }
+
+    /* ----------------------------------------------------------------------- */
+    /* Progress & Status Panel                                                 */
+    /* ----------------------------------------------------------------------- */
+    .progress-section {
+      width: 100%;
+      margin-top: 0.5rem;
+      display: none;
+      flex-direction: column;
+      gap: 0.75rem;
+      background: rgba(12, 12, 12, 0.85);
+      border: 1px solid var(--border-gold-subtle);
+      border-radius: var(--radius-sm);
+      padding: 1.1rem;
+    }
+
+    .progress-section.active {
+      display: flex;
+    }
+
+    .progress-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 0.85rem;
+    }
+
+    .progress-status-text {
+      color: var(--text-secondary);
+      display: flex;
+      align-items: center;
+      gap: 0.55rem;
+    }
+
+    .progress-status-percentage {
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+      color: var(--gold-light);
+    }
+
+    .progress-bar-bg {
+      width: 100%;
+      height: 6px;
+      background: var(--surface-elevated);
+      border-radius: var(--radius-full);
+      overflow: hidden;
+      position: relative;
+      border: 1px solid rgba(255, 255, 255, 0.04);
+    }
+
+    .progress-bar-fill {
+      width: 0%;
+      height: 100%;
+      background: linear-gradient(90deg, #9C7C18, #D4AF37, #E6C766);
+      box-shadow: 0 0 10px rgba(212, 175, 55, 0.35);
+      border-radius: var(--radius-full);
+      transition: width 0.3s ease;
+    }
+
+    .btn-save-completed {
+      background: var(--gold-gradient);
+      color: #0A0A0A;
+      border: none;
+      outline: none;
+      font-size: 0.95rem;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+      padding: 0.85rem 1.25rem;
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+      box-shadow: 0 4px 16px rgba(212, 175, 55, 0.32);
+      transition: var(--transition-smooth);
+      text-decoration: none;
+    }
+
+    .btn-save-completed:hover {
+      background: var(--gold-gradient-hover);
+      transform: translateY(-1px);
+      box-shadow: 0 6px 22px rgba(212, 175, 55, 0.45);
+    }
+
+    /* ----------------------------------------------------------------------- */
+    /* Spinner & Small UI Helpers                                              */
+    /* ----------------------------------------------------------------------- */
+    .spinner {
+      width: 15px;
+      height: 15px;
+      border: 2px solid rgba(212, 175, 55, 0.25);
+      border-top-color: var(--gold-main);
+      border-radius: 50%;
+      animation: spin 0.75s linear infinite;
+      display: inline-block;
+    }
+
+    .btn-gold-primary .spinner {
+      border: 2px solid rgba(10, 10, 10, 0.25);
+      border-top-color: #0A0A0A;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(-4px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    @keyframes slideUp {
+      from { opacity: 0; transform: translateY(16px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* ----------------------------------------------------------------------- */
+    /* Responsive Mobile Optimization (< 768px)                                */
+    /* ----------------------------------------------------------------------- */
+    @media (max-width: 768px) {
+      body {
+        padding: 1.5rem 1rem;
+      }
+
+      header {
+        gap: 0.35rem;
+      }
+
+      h1 {
+        font-size: 1.8rem;
+      }
+
+      .subtitle {
+        font-size: 0.875rem;
+      }
+
+      .input-glass-panel {
+        flex-direction: column;
+        align-items: stretch;
+        padding: 0.85rem;
+        gap: 0.75rem;
+      }
+
+      .btn-gold-primary {
+        width: 100%;
+        justify-content: center;
+        padding: 0.85rem;
+      }
+
+      .video-card {
+        flex-direction: column;
+        border-radius: var(--radius-md);
+      }
+
+      .thumbnail-container {
+        flex: none;
+        width: 100%;
+        height: auto;
+        aspect-ratio: 16 / 9;
+      }
+
+      .video-details-panel {
+        padding: 1.25rem;
+        gap: 1rem;
+      }
+
+      .video-title {
+        font-size: 1.05rem;
+      }
+
+      .button-row {
+        flex-direction: column;
+      }
+
+      .btn-download-start, .btn-secondary, .btn-save-completed {
+        width: 100%;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="app-shell">
+    
+    <!-- Header Area -->
+    <header>
+      <span class="brand-tag">
+        <span class="brand-tag-dot" aria-hidden="true"></span>
+        Omni Downloader
+      </span>
+      <h1>Clean <span class="gold-accent">Media</span> Retrieval</h1>
+      <p class="subtitle">
+        Download videos from supported websites & direct media streams.
+      </p>
+    </header>
+
+    <!-- URL Input Section -->
+    <section class="fetch-form-container" aria-label="Media URL input">
+      <div class="input-glass-panel">
+        <div class="url-icon" aria-hidden="true">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path>
+            <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path>
+          </svg>
+        </div>
+        <input 
+          type="url" 
+          id="urlInput" 
+          class="url-input" 
+          placeholder="Paste video URL..." 
+          autocomplete="off" 
+          spellcheck="false"
+          aria-label="Video URL input"
+        />
+        <button id="btnFetch" class="btn-gold-primary" type="button" aria-label="Fetch video information">
+          <span id="fetchBtnSpinner" class="spinner" style="display: none;" aria-hidden="true"></span>
+          <span id="fetchBtnText">Fetch</span>
+        </button>
+      </div>
+    </section>
+
+    <!-- Feedback Banner -->
+    <div id="alertBanner" class="alert-banner" role="alert" aria-live="polite">
+      <svg id="alertIcon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <circle cx="12" cy="12" r="10"></circle>
+        <line x1="12" y1="8" x2="12" y2="12"></line>
+        <line x1="12" y1="16" x2="12.01" y2="16"></line>
+      </svg>
+      <span id="alertMessageText">Notification message</span>
+    </div>
+
+    <!-- Empty State -->
+    <div id="emptyState" class="empty-state-panel">
+      <div class="empty-icon-wrap" aria-hidden="true">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+          <polygon points="23 7 16 12 23 17 23 7"></polygon>
+          <rect x="1" y="5" width="15" height="14" rx="2" ry="2"></rect>
+        </svg>
+      </div>
+      <div class="empty-state-title">No media loaded</div>
+      <p class="empty-state-hint">
+        Enter a public video or direct stream link above to extract available formats and start downloading.
+      </p>
+    </div>
+
+    <!-- Video Information Card -->
+    <article id="videoCard" class="video-card" aria-label="Media information card">
+      <div class="thumbnail-container">
+        <img id="videoThumb" class="thumbnail-img" src="" alt="Video thumbnail preview" />
+        <span id="videoDuration" class="duration-badge">00:00</span>
+      </div>
+
+      <div class="video-details-panel">
+        <div class="video-header-info">
+          <h2 id="videoTitle" class="video-title">Video title</h2>
+          <div class="video-meta-tags">
+            <span id="metaResCount" class="meta-tag">Available formats</span>
+          </div>
+        </div>
+
+        <div class="action-controls-box">
+          <div class="control-group">
+            <label for="qualitySelect" class="control-label">Quality</label>
+            <div class="select-wrapper">
+              <select id="qualitySelect" class="quality-select" aria-label="Select download quality">
+                <!-- Dynamically populated -->
+              </select>
+              <div class="select-arrow" aria-hidden="true">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <polyline points="6 9 12 15 18 9"></polyline>
+                </svg>
+              </div>
+            </div>
+          </div>
+
+          <!-- Progress Section -->
+          <div id="progressSection" class="progress-section" aria-live="polite">
+            <div class="progress-header">
+              <span id="progressStatus" class="progress-status-text">
+                <span class="spinner" aria-hidden="true"></span>
+                Downloading stream...
+              </span>
+              <span id="progressPercent" class="progress-status-percentage">0%</span>
+            </div>
+            <div class="progress-bar-bg" role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">
+              <div id="progressBarFill" class="progress-bar-fill"></div>
+            </div>
+          </div>
+
+          <!-- Download Buttons -->
+          <div class="button-row">
+            <button id="btnDownload" class="btn-download-start" type="button">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                <polyline points="7 10 12 15 17 10"></polyline>
+                <line x1="12" y1="15" x2="12" y2="3"></line>
+              </svg>
+              <span>Download</span>
+            </button>
+
+            <a id="btnSaveFile" class="btn-save-completed" href="#" download>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M20 6L9 17l-5-5"></path>
+              </svg>
+              <span>Save File</span>
+            </a>
+
+            <button id="btnReset" class="btn-secondary" type="button" aria-label="Reset downloader">
+              Clear
+            </button>
+          </div>
+        </div>
+      </div>
+    </article>
+
+  </div>
+
+  <!-- ----------------------------------------------------------------------- -->
+  <!-- Modular Vanilla JavaScript                                              -->
+  <!-- ----------------------------------------------------------------------- */ -->
+  <script>
+    // State management
+    const state = {
+      currentUrl: '',
+      videoInfo: null,
+      activeJobId: null,
+      pollTimer: null,
+      isFetching: false,
+      isDownloading: false,
+    };
+
+    // DOM references
+    const elements = {
+      urlInput: document.getElementById('urlInput'),
+      btnFetch: document.getElementById('btnFetch'),
+      fetchBtnSpinner: document.getElementById('fetchBtnSpinner'),
+      fetchBtnText: document.getElementById('fetchBtnText'),
+      alertBanner: document.getElementById('alertBanner'),
+      alertMessageText: document.getElementById('alertMessageText'),
+      emptyState: document.getElementById('emptyState'),
+      videoCard: document.getElementById('videoCard'),
+      videoThumb: document.getElementById('videoThumb'),
+      videoDuration: document.getElementById('videoDuration'),
+      videoTitle: document.getElementById('videoTitle'),
+      metaResCount: document.getElementById('metaResCount'),
+      qualitySelect: document.getElementById('qualitySelect'),
+      btnDownload: document.getElementById('btnDownload'),
+      btnSaveFile: document.getElementById('btnSaveFile'),
+      btnReset: document.getElementById('btnReset'),
+      progressSection: document.getElementById('progressSection'),
+      progressStatus: document.getElementById('progressStatus'),
+      progressPercent: document.getElementById('progressPercent'),
+      progressBarFill: document.getElementById('progressBarFill'),
+    };
+
+    // Format duration in seconds to mm:ss or hh:mm:ss
+    function formatDuration(seconds) {
+      if (!seconds || typeof seconds !== 'number' || seconds <= 0) return 'Live / Stream';
+      const hrs = Math.floor(seconds / 3600);
+      const mins = Math.floor((seconds % 3600) / 60);
+      const secs = Math.floor(seconds % 60);
+      const pad = (num) => String(num).padStart(2, '0');
+      if (hrs > 0) {
+        return `${pad(hrs)}:${pad(mins)}:${pad(secs)}`;
+      }
+      return `${pad(mins)}:${pad(secs)}`;
+    }
+
+    // Display alert banner with categorized styling
+    function showError(message) {
+      elements.alertMessageText.textContent = message;
+      elements.alertBanner.className = 'alert-banner error';
+    }
+
+    function showSuccess(message) {
+      elements.alertMessageText.textContent = message;
+      elements.alertBanner.className = 'alert-banner info';
+    }
+
+    function clearAlert() {
+      elements.alertBanner.className = 'alert-banner';
+      elements.alertBanner.style.display = 'none';
+      elements.alertMessageText.textContent = '';
+    }
+
+    // Reset entire UI to initial empty state
+    function resetUI() {
+      if (state.pollTimer) {
+        clearInterval(state.pollTimer);
+        state.pollTimer = null;
+      }
+      state.currentUrl = '';
+      state.videoInfo = null;
+      state.activeJobId = null;
+      state.isFetching = false;
+      state.isDownloading = false;
+
+      elements.urlInput.value = '';
+      elements.emptyState.style.display = 'flex';
+      elements.videoCard.classList.remove('active');
+      elements.progressSection.classList.remove('active');
+      elements.btnDownload.style.display = 'inline-flex';
+      elements.btnDownload.disabled = false;
+      elements.btnSaveFile.style.display = 'none';
+      elements.qualitySelect.innerHTML = '';
+      clearAlert();
+    }
+
+    // Set Fetch button loading state
+    function setFetchLoading(loading) {
+      state.isFetching = loading;
+      elements.btnFetch.disabled = loading;
+      elements.fetchBtnSpinner.style.display = loading ? 'inline-block' : 'none';
+      elements.fetchBtnText.textContent = loading ? 'Fetching...' : 'Fetch';
+    }
+
+    // Fetch video metadata from backend /api/info
+    async function fetchVideoInfo() {
+      const url = elements.urlInput.value.trim();
+      if (!url) {
+        showError('Please enter a valid HTTP or HTTPS URL.');
+        elements.urlInput.focus();
+        return;
+      }
+
+      clearAlert();
+      setFetchLoading(true);
+
+      try {
+        const response = await fetch('/api/info', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url: url }),
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          const errorMsg = data.detail || 'The video could not be reached. Please check the URL and try again.';
+          showError(errorMsg);
+          return;
+        }
+
+        state.currentUrl = url;
+        state.videoInfo = data;
+        renderVideoInfo(data);
+
+      } catch (err) {
+        showError('The video could not be reached. Please check your network connection.');
+      } finally {
+        setFetchLoading(false);
+      }
+    }
+
+    // Render extracted video information into UI
+    function renderVideoInfo(info) {
+      elements.emptyState.style.display = 'none';
+      elements.videoCard.classList.add('active');
+      elements.videoTitle.textContent = info.title || 'Untitled Video';
+      elements.videoDuration.textContent = formatDuration(info.duration);
+      
+      // Fallback thumbnail if missing
+      elements.videoThumb.src = info.thumbnail || 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360" fill="%23111111"><rect width="100%" height="100%"/></svg>';
+      elements.videoThumb.alt = info.title ? `Thumbnail for ${info.title}` : 'Video thumbnail';
+
+      // Build quality options dynamically
+      elements.qualitySelect.innerHTML = '';
+
+      // 1. Best Quality option
+      const bestOpt = document.createElement('option');
+      bestOpt.value = 'best';
+      bestOpt.textContent = 'Best Quality';
+      elements.qualitySelect.appendChild(bestOpt);
+
+      // 2. Available resolutions sorted descending
+      const heights = Array.isArray(info.heights) ? info.heights : [];
+      const sortedDesc = [...heights].sort((a, b) => b - a);
+      sortedDesc.forEach((h) => {
+        const opt = document.createElement('option');
+        opt.value = String(h);
+        const labelExtra = h >= 1080 ? ' (Full HD)' : (h >= 720 ? ' (HD)' : '');
+        opt.textContent = `${h}p${labelExtra}`;
+        elements.qualitySelect.appendChild(opt);
+      });
+
+      // 3. Audio Only (MP3)
+      const audioOpt = document.createElement('option');
+      audioOpt.value = 'audio';
+      audioOpt.textContent = 'Audio Only (MP3)';
+      elements.qualitySelect.appendChild(audioOpt);
+
+      // Metadata summary tag
+      const count = heights.length;
+      elements.metaResCount.textContent = count > 0 ? `${count} resolutions available` : 'Direct media stream';
+
+      // Reset progress & download buttons
+      elements.progressSection.classList.remove('active');
+      elements.btnDownload.style.display = 'inline-flex';
+      elements.btnDownload.disabled = false;
+      elements.btnSaveFile.style.display = 'none';
+      elements.progressBarFill.style.width = '0%';
+      elements.progressPercent.textContent = '0%';
+    }
+
+    // Submit download request to /api/download
+    async function startDownload() {
+      if (!state.currentUrl) return;
+
+      const selectedQuality = elements.qualitySelect.value;
+      clearAlert();
+
+      elements.btnDownload.disabled = true;
+      elements.progressSection.classList.add('active');
+      elements.progressStatus.innerHTML = '<span class="spinner"></span> Initializing download...';
+      elements.progressPercent.textContent = '0%';
+      elements.progressBarFill.style.width = '0%';
+
+      try {
+        const response = await fetch('/api/download', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            url: state.currentUrl,
+            quality: selectedQuality,
+          }),
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          const errorMsg = data.detail || 'The download could not be completed. Please try again.';
+          showError(errorMsg);
+          elements.btnDownload.disabled = false;
+          elements.progressSection.classList.remove('active');
+          return;
+        }
+
+        state.activeJobId = data.job_id;
+        state.isDownloading = true;
+
+        // Poll job status
+        pollJob(state.activeJobId);
+
+      } catch (err) {
+        showError('The download could not be initiated. Please check connection.');
+        elements.btnDownload.disabled = false;
+        elements.progressSection.classList.remove('active');
+      }
+    }
+
+    // Poll /api/status/{job_id} every 800-1000ms
+    function pollJob(jobId) {
+      if (state.pollTimer) {
+        clearInterval(state.pollTimer);
+      }
+
+      state.pollTimer = setInterval(async () => {
+        try {
+          const res = await fetch(`/api/status/${jobId}`);
+          if (!res.ok) {
+            clearInterval(state.pollTimer);
+            state.pollTimer = null;
+            showError('Failed to retrieve download status.');
+            elements.btnDownload.disabled = false;
+            return;
+          }
+
+          const statusData = await res.json();
+
+          if (statusData.status === 'running') {
+            const pct = Math.min(100, Math.max(0, statusData.progress || 0));
+            elements.progressBarFill.style.width = `${pct}%`;
+            elements.progressPercent.textContent = `${pct}%`;
+            elements.progressStatus.innerHTML = `<span class="spinner"></span> Downloading media stream...`;
+          } 
+          else if (statusData.status === 'done') {
+            clearInterval(state.pollTimer);
+            state.pollTimer = null;
+            state.isDownloading = false;
+
+            elements.progressBarFill.style.width = '100%';
+            elements.progressPercent.textContent = '100%';
+            elements.progressStatus.innerHTML = 'Download ready!';
+
+            // Configure completed file download button
+            const downloadUrl = `/api/file/${jobId}`;
+            elements.btnSaveFile.href = downloadUrl;
+            elements.btnSaveFile.style.display = 'inline-flex';
+            elements.btnDownload.style.display = 'none';
+
+            // Auto-trigger browser download safely
+            const hiddenLink = document.createElement('a');
+            hiddenLink.href = downloadUrl;
+            hiddenLink.setAttribute('download', '');
+            document.body.appendChild(hiddenLink);
+            hiddenLink.click();
+            document.body.removeChild(hiddenLink);
+          } 
+          else if (statusData.status === 'error') {
+            clearInterval(state.pollTimer);
+            state.pollTimer = null;
+            state.isDownloading = false;
+
+            elements.btnDownload.disabled = false;
+            elements.progressSection.classList.remove('active');
+            showError(statusData.error || 'The download could not be completed. Please try again.');
+          }
+        } catch (err) {
+          // Soft poll retry
+        }
+      }, 900);
+    }
+
+    // Event Listeners
+    elements.btnFetch.addEventListener('click', fetchVideoInfo);
+    elements.urlInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        fetchVideoInfo();
+      }
+    });
+    elements.btnDownload.addEventListener('click', startDownload);
+    elements.btnReset.addEventListener('click', resetUI);
+  </script>
+</body>
+</html>

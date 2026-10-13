@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: omni-downloader
+    runtime: docker
+    plan: free
+    region: oregon
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHONUNBUFFERED
+        value: "1"
