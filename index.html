@@ -1147,12 +1147,30 @@
 
           const statusData = await res.json();
 
-          if (statusData.status === 'running') {
+          if (statusData.status === 'queued') {
+            elements.progressBarFill.style.width = '5%';
+            elements.progressPercent.textContent = '0%';
+            elements.progressStatus.innerHTML = '<span class="spinner"></span> Waiting in download queue...';
+          }
+          else if (statusData.status === 'running') {
             const pct = Math.min(100, Math.max(0, statusData.progress || 0));
             elements.progressBarFill.style.width = `${pct}%`;
             elements.progressPercent.textContent = `${pct}%`;
-            elements.progressStatus.innerHTML = `<span class="spinner"></span> Downloading media stream...`;
-          } 
+            let extra = '';
+            if (statusData.speed && typeof statusData.speed === 'number' && statusData.speed > 0) {
+              const mb = (statusData.speed / (1024 * 1024)).toFixed(1);
+              extra += ` • ${mb} MB/s`;
+            }
+            if (statusData.eta && typeof statusData.eta === 'number' && statusData.eta > 0) {
+              extra += ` • ETA: ${statusData.eta}s`;
+            }
+            elements.progressStatus.innerHTML = `<span class="spinner"></span> Downloading media stream...${extra}`;
+          }
+          else if (statusData.status === 'processing') {
+            elements.progressBarFill.style.width = '99%';
+            elements.progressPercent.textContent = '99%';
+            elements.progressStatus.innerHTML = '<span class="spinner"></span> Processing & finalizing with FFmpeg...';
+          }
           else if (statusData.status === 'done') {
             clearInterval(state.pollTimer);
             state.pollTimer = null;

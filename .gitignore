@@ -19,6 +19,10 @@ env/
 downloads/*
 !downloads/.gitkeep
 
+# Logs directory (keep folder via .gitkeep)
+logs/*
+!logs/.gitkeep
+
 # IDEs and Editors
 .vscode/
 .idea/
@@ -36,3 +40,9 @@ Desktop.ini
 .pytest_cache/
 .coverage
 htmlcov/
+
+# Node.js dependencies and build artifacts
+node_modules/
+*/node_modules/
+*.tsbuildinfo
+

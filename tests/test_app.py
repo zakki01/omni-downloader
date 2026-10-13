@@ -154,8 +154,14 @@ def test_youtube_url_detection():
 def test_youtube_extractor_args_and_po_token(monkeypatch):
     monkeypatch.delenv("YOUTUBE_PLAYER_CLIENTS", raising=False)
     monkeypatch.delenv("YOUTUBE_PO_TOKEN", raising=False)
+    monkeypatch.delenv("POT_PROVIDER_DISABLE", raising=False)
     args = get_youtube_extractor_args()
-    assert args == {}
+    assert "youtubepot-bgutilhttp" in args
+    assert args["youtubepot-bgutilhttp"]["base_url"] == ["http://127.0.0.1:4416"]
+
+    monkeypatch.setenv("POT_PROVIDER_DISABLE", "1")
+    assert get_youtube_extractor_args() == {}
+    monkeypatch.delenv("POT_PROVIDER_DISABLE", raising=False)
 
     monkeypatch.setenv("YOUTUBE_PLAYER_CLIENTS", "android,web,mweb")
     monkeypatch.setenv("YOUTUBE_PO_TOKEN", "sample_po_token_123")
@@ -163,6 +169,7 @@ def test_youtube_extractor_args_and_po_token(monkeypatch):
     assert "youtube" in args
     assert args["youtube"]["player_client"] == ["android", "web", "mweb"]
     assert "web.gvs+sample_po_token_123" in args["youtube"]["po_token"]
+    assert "youtubepot-bgutilhttp" in args
 
 def test_error_classification_bot_check_vs_drm():
     # 1. YouTube bot check error (Render/Datacenter IP scenario)
@@ -249,5 +256,43 @@ def test_detailed_error_classification():
 
     cat, msg = classify_error(Exception("This video is DRM-protected and cannot be downloaded."))
     assert cat == ErrorCategory.DRM_PROTECTED
+
+def test_pot_provider_manager_and_ping():
+    from app import pot_manager
+    was_running = pot_manager.is_running()
+    if not was_running:
+        started = pot_manager.start()
+        assert started is True, f"Failed to start POT provider: {pot_manager.diagnostics.error_reason}"
+    
+    assert pot_manager.check_port_listening() is True
+    ok, data, err = pot_manager.ping()
+    assert ok is True
+    assert data is not None
+    assert "version" in data
+    assert data["version"] == "2.0.2"
+    
+    diag = pot_manager.diagnostics.to_dict()
+    assert diag["listening"] is True
+    assert diag["ping"] is True
+    assert diag["version"] == "2.0.2"
+
+    if not was_running:
+        pot_manager.stop()
+        assert pot_manager.is_running() is False
+
+def test_health_diagnostics_endpoint():
+    client = TestClient(app)
+    resp = client.get("/health/diagnostics")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["status"] == "ok"
+    assert "engine" in data
+    engine = data["engine"]
+    assert "ytdlp" in engine
+    assert "ejs" in engine
+    assert "ffmpeg" in engine
+    assert "pot_provider" in engine
+    assert "pot_provider_diagnostics" in engine
+
 
 

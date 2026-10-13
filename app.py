@@ -1,9 +1,11 @@
 import asyncio
+import sys
 from abc import ABC, abstractmethod
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 import importlib.metadata
 import ipaddress
+import json
 import logging
 import os
 from pathlib import Path
@@ -42,7 +44,7 @@ BASE_DIR = Path(__file__).resolve().parent
 DOWNLOAD_DIR = BASE_DIR / "downloads"
 DOWNLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
-MAX_WORKERS = 2
+MAX_WORKERS = 4
 RATE_LIMIT_MAX_REQUESTS = 5
 RATE_LIMIT_WINDOW_SECONDS = 60
 CLEANUP_AGE_SECONDS = 3600  # 1 hour
@@ -58,12 +60,45 @@ def get_installed_pkg_version(pkg_name: str) -> Optional[str]:
     except Exception:
         return None
 
-def get_js_runtime_info() -> Dict[str, Optional[str]]:
-    """Locate supported JavaScript runtimes on PATH."""
-    return {
-        "deno": shutil.which("deno"),
-        "node": shutil.which("node"),
-    }
+def get_deno_path() -> Optional[str]:
+    """Locate Deno executable across PATH and standard installation paths."""
+    found = shutil.which("deno")
+    if found:
+        return found
+
+    candidates = [
+        Path.home() / ".deno" / "bin" / ("deno.exe" if os.name == "nt" else "deno"),
+        Path("/usr/local/bin/deno"),
+        Path("/usr/bin/deno"),
+    ]
+    if os.name == "nt":
+        candidates.extend([
+            Path(os.path.expandvars(r"%USERPROFILE%\.deno\bin\deno.exe")),
+            Path(r"C:\Program Files\deno\deno.exe"),
+        ])
+    for c in candidates:
+        if c.is_file():
+            return str(c)
+    return None
+
+def get_node_path() -> Optional[str]:
+    """Locate Node.js executable across PATH and standard installation paths."""
+    found = shutil.which("node")
+    if found:
+        return found
+    candidates = [
+        Path("/usr/local/bin/node"),
+        Path("/usr/bin/node"),
+    ]
+    if os.name == "nt":
+        candidates.extend([
+            Path(r"C:\Program Files\nodejs\node.exe"),
+            Path(os.path.expandvars(r"%LOCALAPPDATA%\Programs\node\node.exe")),
+        ])
+    for c in candidates:
+        if c.is_file():
+            return str(c)
+    return None
 
 def get_ffmpeg_path() -> Optional[str]:
     """Locate the FFmpeg executable across PATH and standard OS installation paths."""
@@ -92,11 +127,31 @@ def is_ffmpeg_available() -> bool:
     """Check if FFmpeg is available on the host system."""
     return get_ffmpeg_path() is not None
 
+# Auto-bootstrap PATH with discovered runtimes
 FFMPEG_PATH = get_ffmpeg_path()
 if FFMPEG_PATH:
     FFMPEG_DIR = str(Path(FFMPEG_PATH).parent)
     if FFMPEG_DIR not in os.environ.get("PATH", ""):
         os.environ["PATH"] = FFMPEG_DIR + os.pathsep + os.environ.get("PATH", "")
+
+DENO_PATH = get_deno_path()
+if DENO_PATH:
+    DENO_DIR = str(Path(DENO_PATH).parent)
+    if DENO_DIR not in os.environ.get("PATH", ""):
+        os.environ["PATH"] = DENO_DIR + os.pathsep + os.environ.get("PATH", "")
+
+NODE_PATH = get_node_path()
+if NODE_PATH:
+    NODE_DIR = str(Path(NODE_PATH).parent)
+    if NODE_DIR not in os.environ.get("PATH", ""):
+        os.environ["PATH"] = NODE_DIR + os.pathsep + os.environ.get("PATH", "")
+
+def get_js_runtime_info() -> Dict[str, Optional[str]]:
+    """Locate supported JavaScript runtimes on PATH or discovered paths."""
+    return {
+        "deno": get_deno_path(),
+        "node": get_node_path(),
+    }
 
 def get_cookies_file_path() -> Optional[Path]:
     """Resolve cookies file from environment variable or standard paths without leaking secrets."""
@@ -123,78 +178,245 @@ def get_cookies_file_path() -> Optional[Path]:
             return cached_cookie
     return None
 
-# Print safe startup diagnostics
+# Dependency constants
 YTDLP_VERSION = yt_dlp.version.__version__
 EJS_VERSION = get_installed_pkg_version("yt-dlp-ejs")
 BGUTIL_VERSION = get_installed_pkg_version("bgutil-ytdlp-pot-provider")
+CURL_CFFI_VERSION = get_installed_pkg_version("curl-cffi")
 JS_RUNTIMES = get_js_runtime_info()
 AVAILABLE_JS = [name for name, p in JS_RUNTIMES.items() if p]
 
-logger.info(f"[DIAGNOSTICS] yt-dlp version: {YTDLP_VERSION}")
-logger.info(f"[DIAGNOSTICS] yt-dlp-ejs available: {EJS_VERSION is not None} (version: {EJS_VERSION or 'not installed'})")
-logger.info(f"[DIAGNOSTICS] bgutil-ytdlp-pot-provider plugin: {BGUTIL_VERSION is not None} (version: {BGUTIL_VERSION or 'not installed'})")
-logger.info(f"[DIAGNOSTICS] JS runtimes detected: {', '.join(AVAILABLE_JS) if AVAILABLE_JS else 'none'}")
-logger.info(f"[DIAGNOSTICS] FFmpeg available: {is_ffmpeg_available()} (path: {FFMPEG_PATH})")
-logger.info(f"[DIAGNOSTICS] Cookies configuration: {'configured' if get_cookies_file_path() else 'none'}")
+# ---------------------------------------------------------------------------
+# Local PO Token Provider Manager (Section 1, 2, 5)
+# ---------------------------------------------------------------------------
+LOGS_DIR = BASE_DIR / "logs"
+LOGS_DIR.mkdir(parents=True, exist_ok=True)
 
-# ---------------------------------------------------------------------------
-# Local PO Token Provider Manager (Localhost / Process Lifecycle)
-# ---------------------------------------------------------------------------
+class POTProviderDiagnostics:
+    def __init__(self):
+        self.cmd: List[str] = []
+        self.pid: Optional[int] = None
+        self.exit_code: Optional[int] = None
+        self.listening: bool = False
+        self.ping_status: bool = False
+        self.ping_version: Optional[str] = None
+        self.ping_uptime: Optional[float] = None
+        self.startup_seconds: float = 0.0
+        self.error_reason: Optional[str] = None
+        self.log_file: Path = LOGS_DIR / "pot_provider.log"
+        self.stderr_tail: str = ""
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "cmd": self.cmd,
+            "pid": self.pid,
+            "exit_code": self.exit_code,
+            "listening": self.listening,
+            "ping": self.ping_status,
+            "version": self.ping_version,
+            "uptime": self.ping_uptime,
+            "startup_seconds": round(self.startup_seconds, 2),
+            "error_reason": self.error_reason,
+            "log_file": str(self.log_file),
+        }
+
 class POTProviderManager:
-    """Manages the local PO Token Provider server lifecycle (bound to localhost only)."""
+    """Manages the internal PO Token Provider server lifecycle (bound strictly to localhost 127.0.0.1:4416)."""
     def __init__(self, host: str = "127.0.0.1", port: int = 4416):
         self.host = host
         self.port = port
         self.process: Optional[subprocess.Popen] = None
         self.url = f"http://{host}:{port}"
+        self.diagnostics = POTProviderDiagnostics()
+        self.log_file_path = self.diagnostics.log_file
 
-    def is_running(self) -> bool:
-        """Ping the local or configured PO token provider server."""
+    def check_port_listening(self) -> bool:
+        """Verify whether port 4416 is actively listening on localhost."""
         try:
-            req = urllib.request.Request(f"{self.url}/ping", headers={"User-Agent": "OmniDownloader"})
-            with urllib.request.urlopen(req, timeout=1.0) as resp:
-                return resp.status == 200
-        except Exception:
+            with socket.create_connection((self.host, self.port), timeout=0.3):
+                return True
+        except (OSError, socket.timeout):
             return False
 
+    def ping(self) -> Tuple[bool, Optional[Dict[str, Any]], Optional[str]]:
+        """Query /ping and require an affirmative HTTP 200 JSON payload with version."""
+        try:
+            req = urllib.request.Request(
+                f"{self.url}/ping",
+                headers={"User-Agent": "OmniDownloader-HealthCheck"}
+            )
+            with urllib.request.urlopen(req, timeout=1.5) as resp:
+                if resp.status == 200:
+                    payload = json.loads(resp.read().decode("utf-8"))
+                    return True, payload, None
+                return False, None, f"HTTP {resp.status}"
+        except Exception as e:
+            return False, None, str(e)
+
+    def is_running(self) -> bool:
+        """Check both socket connection and valid /ping HTTP response."""
+        if not self.check_port_listening():
+            self.diagnostics.listening = False
+            return False
+        self.diagnostics.listening = True
+        ok, payload, err = self.ping()
+        if ok and payload:
+            self.diagnostics.ping_status = True
+            self.diagnostics.ping_version = payload.get("version")
+            self.diagnostics.ping_uptime = payload.get("server_uptime")
+            self.diagnostics.error_reason = None
+            return True
+        self.diagnostics.ping_status = False
+        self.diagnostics.error_reason = err
+        return False
+
     def start(self) -> bool:
-        """Start local background provider process if available and not already running."""
-        # 1. Check if provider is already running (e.g. started externally or in Docker)
+        """Start local background provider process with readiness retry and detailed diagnostics."""
+        t0 = time.time()
+
+        # 1. Check if provider is already running (e.g. started by start.sh container entrypoint or background service)
         if self.is_running():
-            logger.info(f"[POT PROVIDER] Provider already running at {self.url}")
+            self.diagnostics.startup_seconds = time.time() - t0
+            self.diagnostics.error_reason = None
+            logger.info(
+                f"[POT PROVIDER] Provider already running and verified healthy at {self.url} "
+                f"(version: {self.diagnostics.ping_version})"
+            )
             return True
 
-        # 2. Check for local server distribution
+        # 2. Locate provider distribution
         provider_paths = [
             Path("/opt/pot-provider"),
             BASE_DIR / "pot-provider",
         ]
-        provider_dir = next((p for p in provider_paths if (p / "build" / "main.js").is_file()), None)
+        provider_dir = None
+        for p in provider_paths:
+            if (p / "build" / "main.js").is_file() or (p / "src" / "main.ts").is_file():
+                provider_dir = p
+                break
+
         if not provider_dir:
-            logger.info("[POT PROVIDER] Local provider files not present; operating in standalone/fallback mode")
+            msg = "Local provider distribution not found at /opt/pot-provider or pot-provider"
+            self.diagnostics.error_reason = msg
+            logger.warning(f"[POT PROVIDER] {msg}")
             return False
 
-        node_bin = shutil.which("node") or "/usr/local/bin/node"
-        main_script = provider_dir / "build" / "main.js"
+        # 3. Determine best runtime command (Node.js preferred for build/main.js, Deno for src/main.ts or fallback)
+        node_bin = NODE_PATH or shutil.which("node") or "/usr/local/bin/node" or "/usr/bin/node"
+        deno_bin = DENO_PATH or shutil.which("deno") or "/usr/local/bin/deno" or "/usr/bin/deno"
+
+        main_js = provider_dir / "build" / "main.js"
+        main_ts = provider_dir / "src" / "main.ts"
+
+        cmd: Optional[List[str]] = None
+        if shutil.which(node_bin) and main_js.is_file():
+            cmd = [node_bin, str(main_js), "-H", self.host, "-p", str(self.port)]
+        elif shutil.which(deno_bin) and main_ts.is_file():
+            cmd = [
+                deno_bin, "run",
+                "--allow-env", "--allow-net", "--allow-ffi", "--allow-read",
+                str(main_ts),
+                "-H", self.host,
+                "-p", str(self.port),
+            ]
+        elif main_js.is_file() and node_bin:
+            cmd = [node_bin, str(main_js), "-H", self.host, "-p", str(self.port)]
+        elif main_ts.is_file() and deno_bin:
+            cmd = [
+                deno_bin, "run",
+                "--allow-env", "--allow-net", "--allow-ffi", "--allow-read",
+                str(main_ts),
+                "-H", self.host,
+                "-p", str(self.port),
+            ]
+
+        if not cmd:
+            msg = f"No supported JS runtime (node={node_bin}, deno={deno_bin}) found to execute provider in {provider_dir}"
+            self.diagnostics.error_reason = msg
+            logger.warning(f"[POT PROVIDER] {msg}")
+            return False
+
+        self.diagnostics.cmd = cmd
 
         try:
             logger.info(f"[POT PROVIDER] Spawning local provider process on {self.host}:{self.port}...")
+            logger.info(f"[POT PROVIDER] Command: {' '.join(cmd)} (cwd={provider_dir})")
+
+            # Open dedicated log file for provider process output
+            log_fp = open(self.log_file_path, "a", encoding="utf-8")
+            log_fp.write(f"\n--- POT Provider Spawning at {time.strftime('%Y-%m-%d %H:%M:%S')} ---\n")
+            log_fp.write(f"Command: {' '.join(cmd)}\nCWD: {provider_dir}\n")
+            log_fp.flush()
+
             self.process = subprocess.Popen(
-                [node_bin, str(main_script), "--host", self.host, "--port", str(self.port)],
+                cmd,
                 cwd=str(provider_dir),
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
+                stdin=subprocess.DEVNULL,
+                stdout=log_fp,
+                stderr=subprocess.STDOUT,
             )
-            for _ in range(15):
-                time.sleep(0.2)
-                if self.is_running():
-                    logger.info(f"[POT PROVIDER] Local provider successfully started at {self.url}")
-                    return True
-            logger.warning("[POT PROVIDER] Provider process spawned but ping check timed out")
+            self.diagnostics.pid = self.process.pid
+            logger.info(f"[POT PROVIDER] Process spawned with PID {self.process.pid}. Awaiting readiness on {self.host}:{self.port}...")
+
+            # 4. Readiness loop: poll socket and /ping endpoint up to 20 seconds (40 x 0.5s)
+            max_attempts = 40
+            for attempt in range(1, max_attempts + 1):
+                time.sleep(0.5)
+
+                # Check if process terminated prematurely
+                exit_code = self.process.poll()
+                if exit_code is not None:
+                    self.diagnostics.exit_code = exit_code
+                    log_tail = self._read_log_tail()
+                    self.diagnostics.stderr_tail = log_tail
+                    self.diagnostics.error_reason = f"Process exited prematurely with code {exit_code}. Log output: {log_tail}"
+                    logger.error(
+                        f"[POT PROVIDER] Process PID {self.process.pid} terminated prematurely with exit code {exit_code}!\n"
+                        f"Log tail:\n{log_tail}"
+                    )
+                    return False
+
+                # Check socket listening and /ping
+                if self.check_port_listening():
+                    self.diagnostics.listening = True
+                    ok, data, err = self.ping()
+                    if ok and data:
+                        elapsed = time.time() - t0
+                        self.diagnostics.startup_seconds = elapsed
+                        self.diagnostics.ping_status = True
+                        self.diagnostics.ping_version = data.get("version")
+                        self.diagnostics.ping_uptime = data.get("server_uptime")
+                        self.diagnostics.error_reason = None
+                        logger.info(
+                            f"[POT PROVIDER] Provider is listening on port {self.port} and responding to /ping! "
+                            f"(version: {data.get('version')}, took {elapsed:.2f}s)"
+                        )
+                        return True
+
+            # If loop timed out
+            log_tail = self._read_log_tail()
+            self.diagnostics.stderr_tail = log_tail
+            self.diagnostics.error_reason = f"Readiness check timed out after {max_attempts * 0.5}s on {self.url}/ping. Listening: {self.diagnostics.listening}. Log tail: {log_tail}"
+            logger.error(
+                f"[POT PROVIDER] Readiness check timed out after {max_attempts * 0.5}s on {self.url}/ping! "
+                f"Listening: {self.diagnostics.listening}\nLog tail:\n{log_tail}"
+            )
             return False
+
         except Exception as e:
-            logger.warning(f"[POT PROVIDER] Failed to spawn local provider: {e}")
+            self.diagnostics.error_reason = str(e)
+            logger.error(f"[POT PROVIDER] Exception while spawning provider: {e}", exc_info=True)
             return False
+
+    def _read_log_tail(self, max_lines: int = 25) -> str:
+        """Read recent lines from the provider process log file."""
+        if not self.log_file_path.is_file():
+            return "(no log file created)"
+        try:
+            lines = self.log_file_path.read_text(encoding="utf-8", errors="replace").splitlines()
+            return "\n".join(lines[-max_lines:])
+        except Exception as e:
+            return f"(error reading log: {e})"
 
     def stop(self) -> None:
         """Terminate the spawned background provider process gracefully."""
@@ -213,7 +435,76 @@ class POTProviderManager:
 pot_manager = POTProviderManager()
 
 # ---------------------------------------------------------------------------
-# Job Storage Abstraction (Section 13)
+# Startup Self-Check & Validation Engine (Section 11)
+# ---------------------------------------------------------------------------
+def run_startup_self_check() -> Dict[str, Any]:
+    """Verify all downloader engine components and log structured diagnostic status."""
+    is_writable = False
+    try:
+        test_file = DOWNLOAD_DIR / f".write_test_{uuid.uuid4().hex}"
+        test_file.write_text("ok", encoding="utf-8")
+        test_file.unlink(missing_ok=True)
+        is_writable = True
+    except Exception:
+        is_writable = False
+
+    active_pot = pot_manager.is_running()
+    primary_js = "deno" if JS_RUNTIMES.get("deno") else ("node" if JS_RUNTIMES.get("node") else None)
+
+    check_status = {
+        "ytdlp": bool(YTDLP_VERSION),
+        "ytdlp_version": YTDLP_VERSION,
+        "ejs": EJS_VERSION is not None,
+        "ejs_version": EJS_VERSION,
+        "bgutil_plugin": BGUTIL_VERSION is not None,
+        "bgutil_plugin_version": BGUTIL_VERSION,
+        "js_runtime": primary_js,
+        "js_runtimes_available": AVAILABLE_JS,
+        "ffmpeg": is_ffmpeg_available(),
+        "ffmpeg_path": FFMPEG_PATH,
+        "pot_provider": active_pot,
+        "pot_provider_url": pot_manager.url if active_pot else None,
+        "pot_provider_diagnostics": pot_manager.diagnostics.to_dict(),
+        "download_dir_writable": is_writable,
+        "download_dir": str(DOWNLOAD_DIR),
+        "curl_cffi": CURL_CFFI_VERSION is not None,
+    }
+
+    ok_sym = "[OK]"
+    fail_sym = "[FAIL]"
+    try:
+        "\u2713".encode(sys.stdout.encoding or "ascii")
+        ok_sym = "\u2713"
+        fail_sym = "\u2717"
+    except Exception:
+        ok_sym = "[OK]"
+        fail_sym = "[FAIL]"
+
+    # Print clean formatted diagnostics
+    print("=" * 60)
+    print("Omni Downloader - Self-Contained yt-dlp Engine")
+    print("=" * 60)
+    print("Downloader engine:")
+    print(f"  {ok_sym if check_status['ytdlp'] else fail_sym} yt-dlp (v{YTDLP_VERSION})")
+    print(f"  {ok_sym if check_status['ejs'] else fail_sym} EJS (v{EJS_VERSION or 'not installed'})")
+    print(f"  {ok_sym if primary_js else fail_sym} JS Runtime ({primary_js or 'none detected'}: {JS_RUNTIMES.get(primary_js or '')})")
+    print(f"  {ok_sym if check_status['ffmpeg'] else fail_sym} FFmpeg ({FFMPEG_PATH or 'not found'})")
+    pot_diag_msg = (
+        f"online at {pot_manager.url} (v{pot_manager.diagnostics.ping_version or '2.0.2'})"
+        if active_pot
+        else f"OFFLINE ({pot_manager.diagnostics.error_reason or 'process not running'})"
+    )
+    print(f"  {ok_sym if active_pot else fail_sym} PO Token Provider ({pot_diag_msg})")
+    print(f"  {ok_sym if is_writable else fail_sym} Download Directory ({'writable' if is_writable else 'read-only error'})")
+    print("=" * 60)
+
+    return check_status
+
+# Initial self-check will run during lifespan startup
+_INITIAL_SELF_CHECK = None
+
+# ---------------------------------------------------------------------------
+# Job Storage Abstraction (Section 7 & 13)
 # ---------------------------------------------------------------------------
 class JobStore(ABC):
     """Abstract interface for download job persistence and lifecycle management."""
@@ -234,7 +525,7 @@ class JobStore(ABC):
         pass
 
 class InMemoryJobStore(JobStore):
-    """Thread-safe in-memory job store for single-instance prototype deployments."""
+    """Thread-safe in-memory job store with rich lifecycle state tracking."""
     def __init__(self):
         self._jobs: Dict[str, Dict[str, Any]] = {}
         self._lock = threading.Lock()
@@ -242,10 +533,16 @@ class InMemoryJobStore(JobStore):
     def create_job(self, job_id: str) -> Dict[str, Any]:
         job_data = {
             "status": "running",
+            "stage": "running",
             "progress": 0,
+            "downloaded_bytes": 0,
+            "total_bytes": None,
+            "speed": None,
+            "eta": None,
             "error": None,
             "file_path": None,
             "filename": None,
+            "file_size": None,
             "created_at": time.time(),
         }
         with self._lock:
@@ -276,29 +573,29 @@ class InMemoryJobStore(JobStore):
         return removed
 
 class RedisJobStore(JobStore):
-    """Placeholder extension point for future distributed Redis-backed job tracking (Phase 4)."""
+    """Placeholder extension point for future distributed Redis-backed job tracking."""
     def __init__(self, redis_url: str = "redis://localhost:6379"):
         self.redis_url = redis_url
 
     def create_job(self, job_id: str) -> Dict[str, Any]:
-        raise NotImplementedError("RedisJobStore is reserved for Phase 4 distributed queueing.")
+        raise NotImplementedError("RedisJobStore is reserved for distributed queueing.")
 
     def get_job(self, job_id: str) -> Optional[Dict[str, Any]]:
-        raise NotImplementedError("RedisJobStore is reserved for Phase 4 distributed queueing.")
+        raise NotImplementedError("RedisJobStore is reserved for distributed queueing.")
 
     def update_job(self, job_id: str, **kwargs: Any) -> Optional[Dict[str, Any]]:
-        raise NotImplementedError("RedisJobStore is reserved for Phase 4 distributed queueing.")
+        raise NotImplementedError("RedisJobStore is reserved for distributed queueing.")
 
     def cleanup_jobs(self, max_age_seconds: float) -> int:
-        raise NotImplementedError("RedisJobStore is reserved for Phase 4 distributed queueing.")
+        raise NotImplementedError("RedisJobStore is reserved for distributed queueing.")
 
 job_store: JobStore = InMemoryJobStore()
-# Backward-compatibility alias for tests and hooks inspecting jobs dictionary
+# Backward-compatibility aliases for tests inspecting internal state
 jobs = getattr(job_store, "_jobs", {})
 jobs_lock = getattr(job_store, "_lock", threading.Lock())
 
 # ---------------------------------------------------------------------------
-# File Storage Abstraction (Section 14)
+# File Storage Abstraction
 # ---------------------------------------------------------------------------
 class StorageBackend(ABC):
     """Abstract interface for downloaded media storage management."""
@@ -319,7 +616,7 @@ class StorageBackend(ABC):
         pass
 
 class LocalStorage(StorageBackend):
-    """Local filesystem storage in downloads/ directory (ephemeral on Render)."""
+    """Local filesystem storage in downloads/ directory."""
     def __init__(self, download_dir: Path):
         self.download_dir = download_dir
         self.download_dir.mkdir(parents=True, exist_ok=True)
@@ -373,21 +670,21 @@ class LocalStorage(StorageBackend):
         return cleaned
 
 class S3Storage(StorageBackend):
-    """Placeholder extension point for future cloud object storage (Phase 5)."""
+    """Placeholder extension point for future cloud object storage."""
     def __init__(self, bucket_name: str = "omni-downloads"):
         self.bucket_name = bucket_name
 
     def get_file_path(self, job_id: str) -> Optional[Path]:
-        raise NotImplementedError("S3Storage is reserved for Phase 5 cloud object storage integration.")
+        raise NotImplementedError("S3Storage is reserved for cloud object storage.")
 
     def save_output(self, job_id: str, raw_file: Path) -> Path:
-        raise NotImplementedError("S3Storage is reserved for Phase 5 cloud object storage integration.")
+        raise NotImplementedError("S3Storage is reserved for cloud object storage.")
 
     def delete_job_files(self, job_id: str) -> None:
-        raise NotImplementedError("S3Storage is reserved for Phase 5 cloud object storage integration.")
+        raise NotImplementedError("S3Storage is reserved for cloud object storage.")
 
     def cleanup_old_files(self, max_age_seconds: float, active_filenames: Set[str]) -> int:
-        raise NotImplementedError("S3Storage is reserved for Phase 5 cloud object storage integration.")
+        raise NotImplementedError("S3Storage is reserved for cloud object storage.")
 
 storage_backend: StorageBackend = LocalStorage(DOWNLOAD_DIR)
 
@@ -396,7 +693,7 @@ storage_backend: StorageBackend = LocalStorage(DOWNLOAD_DIR)
 # ---------------------------------------------------------------------------
 class InMemoryRateLimiter:
     """Sliding-window in-memory rate limiter per client IP."""
-    def __init__(self, max_requests: int = 5, window_seconds: int = 60):
+    def __init__(self, max_requests: int = 10, window_seconds: int = 60):
         self.max_requests = max_requests
         self.window_seconds = window_seconds
         self.client_timestamps: Dict[str, List[float]] = {}
@@ -422,7 +719,7 @@ rate_limiter = InMemoryRateLimiter(
 executor = ThreadPoolExecutor(max_workers=MAX_WORKERS)
 
 # ---------------------------------------------------------------------------
-# Filename Sanitization & URL Validation
+# Filename Sanitization & URL Validation (SSRF Security)
 # ---------------------------------------------------------------------------
 def sanitize_filename(name: Optional[str], fallback: str = "video", max_length: int = 150) -> str:
     """Sanitize title to produce a safe filesystem filename."""
@@ -520,7 +817,7 @@ def check_ssrf(url_str: str) -> None:
             raise HTTPException(status_code=400, detail="Please enter a valid HTTP or HTTPS URL.")
 
 def validate_url(url: str) -> str:
-    """Validate URL syntax and enforce SSRF restrictions."""
+    """Validate URL syntax and enforce SSRF restrictions for all external user requests."""
     if not url or not isinstance(url, str):
         raise HTTPException(status_code=400, detail="Please enter a valid HTTP or HTTPS URL.")
     url = url.strip()
@@ -528,11 +825,18 @@ def validate_url(url: str) -> str:
     return url
 
 def install_ssrf_guards() -> None:
-    """Intercept yt-dlp network requests and redirects to ensure no SSRF occurs downstream."""
+    """Intercept yt-dlp network requests and redirects to ensure no SSRF occurs downstream.
+    Explicitly allows trusted local PO Token Provider communication while guarding all outbound fetches."""
     orig_send = RequestDirector.send
 
     def guarded_send(self: Any, request: Request) -> Response:
         url_str = str(request.url)
+
+        # Allow internal communication with the trusted local PO Token Provider
+        configured_pot_url = os.environ.get("POT_PROVIDER_URL", pot_manager.url).rstrip("/")
+        if url_str.startswith(configured_pot_url) or url_str.startswith("http://127.0.0.1:4416"):
+            return orig_send(self, request)
+
         try:
             check_ssrf(url_str)
         except Exception as e:
@@ -557,33 +861,29 @@ def install_ssrf_guards() -> None:
 install_ssrf_guards()
 
 # ---------------------------------------------------------------------------
-# Error Classification Architecture (Section 9)
+# Error Classification Architecture (Section 8)
 # ---------------------------------------------------------------------------
 class ErrorCategory:
-    YOUTUBE_BOT_CHALLENGE = "YOUTUBE_BOT_CHALLENGE"
-    YOUTUBE_PO_TOKEN_REQUIRED = "YOUTUBE_PO_TOKEN_REQUIRED"
-    YOUTUBE_AUTH_REQUIRED = "YOUTUBE_AUTH_REQUIRED"
-    YOUTUBE_NO_FORMATS = "YOUTUBE_NO_FORMATS"
+    AUTH_REQUIRED = "AUTH_REQUIRED"
+    BOT_CHALLENGE = "BOT_CHALLENGE"
+    PO_TOKEN_REQUIRED = "PO_TOKEN_REQUIRED"
     DRM_PROTECTED = "DRM_PROTECTED"
     UNSUPPORTED_URL = "UNSUPPORTED_URL"
+    NO_FORMATS = "NO_FORMATS"
+    GEO_RESTRICTED = "GEO_RESTRICTED"
+    UNAVAILABLE = "UNAVAILABLE"
     NETWORK_ERROR = "NETWORK_ERROR"
     FFMPEG_ERROR = "FFMPEG_ERROR"
     DOWNLOAD_FAILED = "DOWNLOAD_FAILED"
 
-ERROR_MESSAGES: Dict[str, str] = {
-    ErrorCategory.YOUTUBE_BOT_CHALLENGE: "YouTube requires additional verification for this server request. Please try again later or use another supported source.",
-    ErrorCategory.YOUTUBE_PO_TOKEN_REQUIRED: "YouTube requires proof-of-origin verification for this request. Please configure authorized server access or try another source.",
-    ErrorCategory.YOUTUBE_AUTH_REQUIRED: "This YouTube video requires account authorization or sign-in.",
-    ErrorCategory.YOUTUBE_NO_FORMATS: "No compatible stream formats could be extracted for this video.",
-    ErrorCategory.DRM_PROTECTED: "This video is DRM-protected and cannot be downloaded.",
-    ErrorCategory.UNSUPPORTED_URL: "This website is not supported by the downloader.",
-    ErrorCategory.NETWORK_ERROR: "The video could not be reached. Please check the URL and try again.",
-    ErrorCategory.FFMPEG_ERROR: "FFmpeg is required for this download. Please install FFmpeg and try again.",
-    ErrorCategory.DOWNLOAD_FAILED: "The download could not be completed. Please try again.",
-}
+    # Backward compatibility aliases for existing tests
+    YOUTUBE_BOT_CHALLENGE = "BOT_CHALLENGE"
+    YOUTUBE_PO_TOKEN_REQUIRED = "PO_TOKEN_REQUIRED"
+    YOUTUBE_AUTH_REQUIRED = "AUTH_REQUIRED"
+    YOUTUBE_NO_FORMATS = "NO_FORMATS"
 
 def detect_bot_check_error(e: Exception) -> bool:
-    """Detect if an exception indicates YouTube bot verification or challenge requirement."""
+    """Detect if an exception indicates bot verification or challenge requirement."""
     msg = str(e).lower()
     bot_indicators = [
         "sign in to confirm you're not a bot",
@@ -618,45 +918,64 @@ def detect_drm_error(e: Exception) -> bool:
     return any(keyword in msg for keyword in drm_keywords)
 
 def classify_error(e: Exception) -> Tuple[str, str]:
-    """Map raw exception into a precise category and concise human-readable message."""
+    """Normalize raw yt-dlp exception into a clear category and user-facing message across all platforms."""
     msg = str(e).lower()
 
-    # 1. PO Token explicitly missing
-    if "gvs po token" in msg or "po token which was not provided" in msg or "po token is required" in msg:
-        return ErrorCategory.YOUTUBE_PO_TOKEN_REQUIRED, ERROR_MESSAGES[ErrorCategory.YOUTUBE_PO_TOKEN_REQUIRED]
-
-    # 2. Bot verification check (NEVER claim DRM)
-    if detect_bot_check_error(e):
-        return ErrorCategory.YOUTUBE_BOT_CHALLENGE, ERROR_MESSAGES[ErrorCategory.YOUTUBE_BOT_CHALLENGE]
-
-    # 3. Account / auth required
-    if any(k in msg for k in ("sign in to view this video", "sign in to confirm your age", "confirm your age", "private video", "this video is private")):
-        return ErrorCategory.YOUTUBE_AUTH_REQUIRED, ERROR_MESSAGES[ErrorCategory.YOUTUBE_AUTH_REQUIRED]
-
-    # 4. DRM protected content
+    # 1. DRM protected content
     if detect_drm_error(e):
-        return ErrorCategory.DRM_PROTECTED, ERROR_MESSAGES[ErrorCategory.DRM_PROTECTED]
+        return ErrorCategory.DRM_PROTECTED, "This video is DRM-protected and cannot be downloaded."
+
+    # 2. Proof-of-Origin Token missing
+    if "gvs po token" in msg or "po token which was not provided" in msg or "po token is required" in msg:
+        return ErrorCategory.PO_TOKEN_REQUIRED, "YouTube requires proof-of-origin verification for this request. Please configure authorized server access or try another source."
+
+    # 3. Bot verification challenge (never claim DRM)
+    if detect_bot_check_error(e):
+        if "instagram" in msg:
+            return ErrorCategory.AUTH_REQUIRED, "This Instagram media requires authentication or authorized cookies."
+        return ErrorCategory.BOT_CHALLENGE, "YouTube requires additional verification for this server request. Please try again later or use another supported source."
+
+    # 4. Account / login authorization required
+    if any(k in msg for k in (
+        "sign in to view this video", "sign in to confirm your age", "confirm your age",
+        "private video", "this video is private", "only works when logged-in",
+        "login required", "requires authentication", "not granting access",
+        "empty media response", "please log in"
+    )):
+        if "instagram" in msg:
+            return ErrorCategory.AUTH_REQUIRED, "This Instagram media requires authentication or authorized cookies."
+        if "youtube" in msg:
+            return ErrorCategory.AUTH_REQUIRED, "This YouTube video requires account authorization or sign-in."
+        return ErrorCategory.AUTH_REQUIRED, "This media requires authentication."
 
     # 5. FFmpeg missing
     if any(k in msg for k in ("ffmpeg is not installed", "ffmpeg not found", "ffmpeg is required")):
-        return ErrorCategory.FFMPEG_ERROR, ERROR_MESSAGES[ErrorCategory.FFMPEG_ERROR]
+        return ErrorCategory.FFMPEG_ERROR, "FFmpeg is required for this download. Please ensure FFmpeg is available and try again."
 
     # 6. Unsupported URL / Extractor
     if "unsupported url" in msg or "no suitable extractor" in msg:
-        return ErrorCategory.UNSUPPORTED_URL, ERROR_MESSAGES[ErrorCategory.UNSUPPORTED_URL]
+        return ErrorCategory.UNSUPPORTED_URL, "Unable to extract media from this URL. This website is not supported."
 
     # 7. No formats extracted
-    if any(k in msg for k in ("requested format is not available", "no video formats found")):
-        return ErrorCategory.YOUTUBE_NO_FORMATS, ERROR_MESSAGES[ErrorCategory.YOUTUBE_NO_FORMATS]
+    if any(k in msg for k in ("requested format is not available", "no video formats found", "no formats")):
+        return ErrorCategory.NO_FORMATS, "No downloadable formats were found."
 
-    # 8. Network / resolution errors
-    if any(k in msg for k in ("http error 404", "not found", "unable to download webpage", "name or service not known", "failed to resolve", "connection refused", "timed out", "network")):
-        return ErrorCategory.NETWORK_ERROR, ERROR_MESSAGES[ErrorCategory.NETWORK_ERROR]
+    # 8. Geo-restriction
+    if "geo restriction" in msg or "not available from your location" in msg or "geoblocked" in msg:
+        return ErrorCategory.GEO_RESTRICTED, "This media is not available in the server's geographic location."
+
+    # 9. 404 / Video removed
+    if "http error 404" in msg or "not found" in msg or "video has been removed" in msg:
+        return ErrorCategory.UNAVAILABLE, "Unable to extract media from this URL. The media may have been removed or made private."
+
+    # 10. Network / resolution errors
+    if any(k in msg for k in ("unable to download webpage", "name or service not known", "failed to resolve", "connection refused", "timed out", "network", "getaddrinfo failed")):
+        return ErrorCategory.NETWORK_ERROR, "The video could not be reached. Please check the URL and try again."
 
     if "ssrf" in msg or "disallowed" in msg or "forbidden" in msg:
         return ErrorCategory.UNSUPPORTED_URL, "Please enter a valid HTTP or HTTPS URL."
 
-    return ErrorCategory.DOWNLOAD_FAILED, ERROR_MESSAGES[ErrorCategory.DOWNLOAD_FAILED]
+    return ErrorCategory.DOWNLOAD_FAILED, "Download failed. Please try again."
 
 def categorize_error(e: Exception) -> str:
     """User-facing error message wrapper for backward compatibility."""
@@ -664,7 +983,7 @@ def categorize_error(e: Exception) -> str:
     return msg
 
 # ---------------------------------------------------------------------------
-# Format Builder & Resolution Filtering
+# Format Builder & Resolution Filtering (Section 6)
 # ---------------------------------------------------------------------------
 def get_available_heights(formats: List[Dict[str, Any]], top_level_height: Optional[int] = None) -> List[int]:
     """Extract and sort available numeric video heights."""
@@ -682,7 +1001,7 @@ def get_available_heights(formats: List[Dict[str, Any]], top_level_height: Optio
     return sorted(list(raw_heights))
 
 def build_format_selector(quality: str) -> Tuple[str, List[Dict[str, Any]]]:
-    """Generate yt-dlp format selector and postprocessors according to specification."""
+    """Generate yt-dlp format selector and postprocessors dynamically without unnecessary transcoding."""
     postprocessors: List[Dict[str, Any]] = []
 
     if quality == "best":
@@ -714,11 +1033,7 @@ def process_extracted_metadata(info: Dict[str, Any], url: str) -> Dict[str, Any]
     int_duration = int(duration) if duration is not None and isinstance(duration, (int, float)) else None
 
     logger.info(
-        f"[YT-DLP INFO]\n"
-        f"extractor={info.get('extractor')}\n"
-        f"title={info.get('title')}\n"
-        f"duration={int_duration}s\n"
-        f"available_heights={sorted_heights}"
+        f"[METADATA] extractor={info.get('extractor')} title={info.get('title')} duration={int_duration}s heights={sorted_heights}"
     )
 
     return {
@@ -727,63 +1042,123 @@ def process_extracted_metadata(info: Dict[str, Any], url: str) -> Dict[str, Any]
         "duration": int_duration,
         "heights": sorted_heights,
         "resolved_url": info.get("webpage_url") or url,
+        "extractor": info.get("extractor") or "generic",
     }
 
 # ---------------------------------------------------------------------------
-# Media Extractor Abstraction (Section 1)
+# Media Extractor Pipeline (Sections 1, 3, 4)
 # ---------------------------------------------------------------------------
+def build_extractor_args() -> Dict[str, Any]:
+    """Construct extractor args for YouTube, bgutil PO Token Provider, and player clients."""
+    yt_args: Dict[str, List[str]] = {}
+    clients_env = os.environ.get("YOUTUBE_PLAYER_CLIENTS", "").strip()
+    if clients_env:
+        yt_args["player_client"] = [c.strip() for c in clients_env.split(",") if c.strip()]
+
+    po_token_env = os.environ.get("YOUTUBE_PO_TOKEN", "").strip()
+    if po_token_env:
+        if "+" in po_token_env:
+            yt_args["po_token"] = [po_token_env]
+        else:
+            yt_args["po_token"] = [f"web.gvs+{po_token_env}", f"web+{po_token_env}"]
+
+    pot_url = os.environ.get("POT_PROVIDER_URL", "").strip() or pot_manager.url
+    pot_args: Dict[str, List[str]] = {"base_url": [pot_url]}
+
+    res: Dict[str, Any] = {}
+    if yt_args:
+        res["youtube"] = yt_args
+    if os.environ.get("POT_PROVIDER_DISABLE", "").lower() not in ("1", "true", "yes"):
+        res["youtubepot-bgutilhttp"] = pot_args
+    return res
+
+def build_unified_ydl_opts(
+    url: str,
+    is_download: bool = False,
+    format_str: Optional[str] = None,
+    postprocessors: Optional[List[Dict[str, Any]]] = None,
+    job_id: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Construct unified, self-contained yt-dlp options for all supported platforms."""
+    opts: Dict[str, Any] = {
+        "noplaylist": True,
+        "quiet": True,
+        "no_warnings": True,
+        "extract_flat": False,
+        "js_runtimes": {"deno": {}, "node": {}},
+        "remote_components": ["ejs:github"],
+    }
+
+    if FFMPEG_PATH:
+        opts["ffmpeg_location"] = str(Path(FFMPEG_PATH).parent)
+
+    cookies_path = get_cookies_file_path()
+    if cookies_path:
+        opts["cookiefile"] = str(cookies_path)
+
+    ext_args = build_extractor_args()
+    if ext_args:
+        opts["extractor_args"] = ext_args
+
+    if is_download:
+        opts["format"] = format_str or "bv*+ba/b"
+        if postprocessors:
+            opts["postprocessors"] = postprocessors
+
+    return opts
+
+# Media Extractor Abstraction (Preserved for compatibility and architectural decoupling)
 class MediaExtractor(ABC):
-    """Abstract base class for provider-aware media extraction."""
     @abstractmethod
     def supports(self, url: str) -> bool:
-        """Check if this extractor handles the target URL."""
         pass
 
     @abstractmethod
-    def build_ydl_opts(self, url: str, is_download: bool = False, format_str: Optional[str] = None, postprocessors: Optional[List[Dict[str, Any]]] = None, job_id: Optional[str] = None) -> Dict[str, Any]:
-        """Construct yt-dlp configuration options."""
+    def build_ydl_opts(
+        self,
+        url: str,
+        is_download: bool = False,
+        format_str: Optional[str] = None,
+        postprocessors: Optional[List[Dict[str, Any]]] = None,
+        job_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
         pass
 
     @abstractmethod
     def extract_info(self, url: str) -> Dict[str, Any]:
-        """Extract metadata without downloading."""
         pass
 
-class YtDlpExtractor(MediaExtractor):
-    """Generic yt-dlp extractor for non-YouTube media (direct MP4, Vimeo, etc.)."""
+class GenericMediaExtractor(MediaExtractor):
+    """Unified extractor engine delegating platform-specific mechanics directly to yt-dlp."""
     def supports(self, url: str) -> bool:
-        return True  # Catch-all fallback
+        return True
 
-    def build_ydl_opts(self, url: str, is_download: bool = False, format_str: Optional[str] = None, postprocessors: Optional[List[Dict[str, Any]]] = None, job_id: Optional[str] = None) -> Dict[str, Any]:
-        opts: Dict[str, Any] = {
-            "noplaylist": True,
-            "quiet": True,
-            "no_warnings": True,
-            "extract_flat": False,
-            "js_runtimes": {"deno": {}, "node": {}},
-        }
-        if FFMPEG_PATH:
-            opts["ffmpeg_location"] = str(Path(FFMPEG_PATH).parent)
-        cookies_path = get_cookies_file_path()
-        if cookies_path:
-            opts["cookiefile"] = str(cookies_path)
-        if is_download:
-            opts["format"] = format_str or "bv*+ba/b"
-            if postprocessors:
-                opts["postprocessors"] = postprocessors
-        return opts
+    def build_ydl_opts(
+        self,
+        url: str,
+        is_download: bool = False,
+        format_str: Optional[str] = None,
+        postprocessors: Optional[List[Dict[str, Any]]] = None,
+        job_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        return build_unified_ydl_opts(
+            url,
+            is_download=is_download,
+            format_str=format_str,
+            postprocessors=postprocessors,
+            job_id=job_id,
+        )
 
     def extract_info(self, url: str) -> Dict[str, Any]:
         ydl_opts = self.build_ydl_opts(url, is_download=False)
-        logger.info(f"[EXTRACTION] YtDlpExtractor executing for: {url}")
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=False)
             if not info:
                 raise RuntimeError("Failed to extract media information.")
             return process_extracted_metadata(info, url)
 
-class YouTubeExtractor(MediaExtractor):
-    """Specialized YouTube extractor with EJS solver, PO Token Provider, and fallback pipeline."""
+class YouTubeExtractor(GenericMediaExtractor):
+    """YouTube-specific extractor specialization."""
     def supports(self, url: str) -> bool:
         try:
             parsed = urllib.parse.urlparse(url)
@@ -793,78 +1168,22 @@ class YouTubeExtractor(MediaExtractor):
             return False
 
     def _build_extractor_args(self) -> Dict[str, Any]:
-        """Configure player clients, PO Token Provider, and fallback tokens."""
-        yt_args: Dict[str, List[str]] = {}
-        clients_env = os.environ.get("YOUTUBE_PLAYER_CLIENTS", "").strip()
-        if clients_env:
-            yt_args["player_client"] = [c.strip() for c in clients_env.split(",") if c.strip()]
+        return build_extractor_args()
 
-        pot_args: Dict[str, List[str]] = {}
-        configured_pot_url = os.environ.get("POT_PROVIDER_URL", "").strip()
-        if configured_pot_url:
-            pot_args["base_url"] = [configured_pot_url]
-        elif pot_manager.is_running():
-            pot_args["base_url"] = [pot_manager.url]
-
-        po_token_env = os.environ.get("YOUTUBE_PO_TOKEN", "").strip()
-        if po_token_env:
-            if "+" in po_token_env:
-                yt_args["po_token"] = [po_token_env]
-            else:
-                yt_args["po_token"] = [f"web.gvs+{po_token_env}", f"web+{po_token_env}"]
-
-        res: Dict[str, Any] = {}
-        if yt_args:
-            res["youtube"] = yt_args
-        if pot_args:
-            res["youtubepot-bgutilhttp"] = pot_args
-        return res
-
-    def build_ydl_opts(self, url: str, is_download: bool = False, format_str: Optional[str] = None, postprocessors: Optional[List[Dict[str, Any]]] = None, job_id: Optional[str] = None) -> Dict[str, Any]:
-        opts: Dict[str, Any] = {
-            "noplaylist": True,
-            "quiet": True,
-            "no_warnings": True,
-            "extract_flat": False,
-            "js_runtimes": {"deno": {}, "node": {}},
-            "remote_components": ["ejs:github"],
-        }
-        if FFMPEG_PATH:
-            opts["ffmpeg_location"] = str(Path(FFMPEG_PATH).parent)
-        cookies_path = get_cookies_file_path()
-        if cookies_path:
-            opts["cookiefile"] = str(cookies_path)
-
-        extractor_args = self._build_extractor_args()
-        if extractor_args:
-            opts["extractor_args"] = extractor_args
-
-        if is_download:
-            opts["format"] = format_str or "bv*+ba/b"
-            if postprocessors:
-                opts["postprocessors"] = postprocessors
-        return opts
-
-    def extract_info(self, url: str) -> Dict[str, Any]:
-        """Smart fallback order: Standard -> EJS solver -> POT Provider -> Cookies."""
-        ydl_opts = self.build_ydl_opts(url, is_download=False)
-        logger.info(f"[EXTRACTION] YouTubeExtractor executing for: {url}")
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(url, download=False)
-            if not info:
-                raise RuntimeError("Failed to extract YouTube video information.")
-            return process_extracted_metadata(info, url)
+class YtDlpExtractor(GenericMediaExtractor):
+    """Generic non-YouTube extractor specialization."""
+    pass
 
 class BrowserExtractor(MediaExtractor):
-    """Extension point for future Playwright headless browser fallback (Phase 2)."""
+    """Extension point for future browser automation if ever necessary."""
     def supports(self, url: str) -> bool:
-        return False  # Placeholder: Not activated in Phase 1
+        return False
 
     def build_ydl_opts(self, url: str, is_download: bool = False, format_str: Optional[str] = None, postprocessors: Optional[List[Dict[str, Any]]] = None, job_id: Optional[str] = None) -> Dict[str, Any]:
-        raise NotImplementedError("BrowserExtractor is reserved for Phase 2 Playwright integration.")
+        raise NotImplementedError("BrowserExtractor is reserved for future fallback.")
 
     def extract_info(self, url: str) -> Dict[str, Any]:
-        raise NotImplementedError("BrowserExtractor is reserved for Phase 2 Playwright integration.")
+        raise NotImplementedError("BrowserExtractor is reserved for future fallback.")
 
 EXTRACTORS: List[MediaExtractor] = [
     YouTubeExtractor(),
@@ -873,13 +1192,13 @@ EXTRACTORS: List[MediaExtractor] = [
 ]
 
 def get_extractor(url: str) -> MediaExtractor:
-    """Resolve the appropriate extractor for the given media URL."""
+    """Resolve extractor instance for target URL."""
     for ext in EXTRACTORS:
         if ext.supports(url):
             return ext
-    return YtDlpExtractor()
+    return GenericMediaExtractor()
 
-# Backward-compatibility aliases
+# Backward-compatibility helper functions
 def is_youtube_url(url: str) -> bool:
     return YouTubeExtractor().supports(url)
 
@@ -890,51 +1209,74 @@ def build_ydl_base_opts(url: str) -> Dict[str, Any]:
     return get_extractor(url).build_ydl_opts(url, is_download=False)
 
 def extract_video_info(url: str) -> Dict[str, Any]:
+    """Extract metadata using the unified yt-dlp pipeline with clean error classification."""
     try:
         extractor = get_extractor(url)
         return extractor.extract_info(url)
     except Exception as e:
         logger.error(f"Metadata extraction error for {url}: {e}", exc_info=True)
         category, clean_message = classify_error(e)
-        logger.info(f"Classified error category: {category}")
+        logger.info(f"Classified error: category={category}, message='{clean_message}'")
         raise HTTPException(status_code=400, detail=clean_message)
 
 # ---------------------------------------------------------------------------
-# Download Worker & Progress Tracking
+# Download Worker & Progress Tracking (Sections 6, 7)
 # ---------------------------------------------------------------------------
 def progress_hook(d: Dict[str, Any], job_id: str) -> None:
-    """Track transfer percentage without prematurely declaring job completion."""
+    """Track transfer percentage, speed, and ETA without blocking the download worker."""
     status = d.get("status")
     if status == "downloading":
         total = d.get("total_bytes") or d.get("total_bytes_estimate")
         downloaded = d.get("downloaded_bytes", 0)
+        speed = d.get("speed")
+        eta = d.get("eta")
+
+        pct = 0
         if total and total > 0:
-            pct = min(100, max(0, int((downloaded / total) * 100)))
-            cur = job_store.get_job(job_id)
-            if cur and cur.get("status") == "running":
-                job_store.update_job(job_id, progress=min(pct, 99))
+            pct = min(99, max(0, int((downloaded / total) * 100)))
+
+        job_store.update_job(
+            job_id,
+            status="running",
+            stage="downloading",
+            progress=pct,
+            downloaded_bytes=downloaded,
+            total_bytes=total,
+            speed=speed,
+            eta=eta,
+        )
     elif status == "finished":
-        cur = job_store.get_job(job_id)
-        if cur and cur.get("status") == "running":
-            job_store.update_job(job_id, progress=99)
+        job_store.update_job(
+            job_id,
+            status="processing",
+            stage="processing",
+            progress=99,
+        )
     elif status == "error":
         logger.error(f"[YT-DLP ERROR] Hook reported error for job {job_id}: {d}")
 
+def postprocessor_hook(d: Dict[str, Any], job_id: str) -> None:
+    """Track FFmpeg post-processing / audio extraction / stream merging stage."""
+    status = d.get("status")
+    pp = d.get("postprocessor", "FFmpeg")
+    if status == "started":
+        job_store.update_job(
+            job_id,
+            status="processing",
+            stage=f"processing_{pp}".lower(),
+            progress=99,
+        )
+
 def download_media(job_id: str, url: str, quality: str) -> None:
-    """Execute background download pipeline using extractor architecture, storage, and FFmpeg."""
+    """Execute background download pipeline using unified extractor, storage, and FFmpeg."""
     format_str, postprocessors = build_format_selector(quality)
     out_template = str(DOWNLOAD_DIR / f"{job_id}.%(ext)s")
     extractor = get_extractor(url)
 
+    job_store.update_job(job_id, status="running", stage="downloading", progress=0)
+
     logger.info(
-        f"\n[DOWNLOAD START]\n"
-        f"job_id={job_id}\n"
-        f"url={url}\n"
-        f"extractor={extractor.__class__.__name__}\n"
-        f"quality={quality}\n"
-        f"selector={format_str}\n"
-        f"output_template={out_template}\n"
-        f"ffmpeg_available={is_ffmpeg_available()}"
+        f"[DOWNLOAD START] job_id={job_id} url={url} quality={quality} selector='{format_str}'"
     )
 
     try:
@@ -948,6 +1290,7 @@ def download_media(job_id: str, url: str, quality: str) -> None:
         ydl_opts.update({
             "outtmpl": out_template,
             "progress_hooks": [lambda d: progress_hook(d, job_id)],
+            "postprocessor_hooks": [lambda d: postprocessor_hook(d, job_id)],
         })
 
         if not FFMPEG_PATH and (quality == "audio" or "+" in format_str):
@@ -985,24 +1328,22 @@ def download_media(job_id: str, url: str, quality: str) -> None:
         job_store.update_job(
             job_id,
             status="done",
+            stage="done",
             progress=100,
             file_path=str(final_file),
             filename=download_filename,
+            file_size=file_size,
             error=None,
         )
 
         logger.info(
-            f"\n[DOWNLOAD COMPLETED]\n"
-            f"job_id={job_id}\n"
-            f"file_path={final_file}\n"
-            f"file_size={file_size} bytes\n"
-            f"download_filename={download_filename}"
+            f"[DOWNLOAD COMPLETED] job_id={job_id} file_path={final_file} size={file_size}B filename='{download_filename}'"
         )
 
     except Exception as e:
         logger.error(f"[DOWNLOAD FAILED] job_id={job_id}: {e}", exc_info=True)
         _, clean_msg = classify_error(e)
-        job_store.update_job(job_id, status="error", error=clean_msg)
+        job_store.update_job(job_id, status="error", stage="error", error=clean_msg)
         storage_backend.delete_job_files(job_id)
 
 def create_download_job(url: str, quality: str) -> str:
@@ -1026,12 +1367,11 @@ async def cleanup_old_files() -> None:
     while True:
         try:
             await asyncio.sleep(CLEANUP_INTERVAL_SECONDS)
-            # Find in-flight filenames that should not be touched
             with jobs_lock:
                 active_files = {
                     Path(j["file_path"]).name
                     for j in jobs.values()
-                    if j.get("file_path") and j.get("status") == "running"
+                    if j.get("file_path") and j.get("status") in ("queued", "running", "processing")
                 }
 
             cleaned_count = storage_backend.cleanup_old_files(CLEANUP_AGE_SECONDS, active_files)
@@ -1046,29 +1386,32 @@ async def cleanup_old_files() -> None:
             logger.error(f"Error in cleanup task: {loop_err}")
 
 # ---------------------------------------------------------------------------
-# FastAPI Lifespan & App Setup (Section 15 & 16)
+# FastAPI Lifespan & App Setup
 # ---------------------------------------------------------------------------
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # 1. Start local POT Provider if configured
+    # 1. Start local POT Provider
     pot_manager.start()
 
-    # 2. Start background cleanup loop
+    # 2. Re-run self-check after POT startup
+    run_startup_self_check()
+
+    # 3. Start background cleanup loop
     cleanup_task = asyncio.create_task(cleanup_old_files())
 
     yield
 
-    # 3. Shutdown cleanup loop
+    # 4. Shutdown cleanup loop
     cleanup_task.cancel()
     try:
         await cleanup_task
     except asyncio.CancelledError:
         pass
 
-    # 4. Stop local POT Provider
+    # 5. Stop local POT Provider
     pot_manager.stop()
 
-    # 5. Shutdown thread pool
+    # 6. Shutdown thread pool
     executor.shutdown(wait=False)
 
 app = FastAPI(title="Omni Downloader", lifespan=lifespan)
@@ -1091,7 +1434,7 @@ def check_rate_limit(request: FastApiRequest) -> None:
     if not rate_limiter.is_allowed(client_ip):
         raise HTTPException(
             status_code=429,
-            detail="Rate limit exceeded. Maximum 5 requests per minute.",
+            detail="Rate limit exceeded. Maximum 10 requests per minute.",
         )
 
 # ---------------------------------------------------------------------------
@@ -1099,8 +1442,21 @@ def check_rate_limit(request: FastApiRequest) -> None:
 # ---------------------------------------------------------------------------
 @app.get("/health")
 async def health_check():
-    """Health check endpoint for Render and container orchestrators (Section 16)."""
+    """Health check endpoint for Render and container orchestrators (Section 11 & 16)."""
+    check_status = run_startup_self_check()
+    is_healthy = check_status["ytdlp"] and check_status["download_dir_writable"]
+    if not is_healthy:
+        raise HTTPException(status_code=503, detail="Downloader engine degraded")
     return {"status": "ok"}
+
+@app.get("/health/diagnostics")
+async def health_diagnostics():
+    """Detailed engine diagnostics endpoint."""
+    check_status = run_startup_self_check()
+    return {
+        "status": "ok",
+        "engine": check_status,
+    }
 
 @app.get("/terms")
 async def get_terms():
@@ -1120,7 +1476,7 @@ async def get_privacy():
 
 @app.get("/")
 async def get_index():
-    """Serve the single-page vanilla web interface."""
+    """Serve the single-page web interface."""
     index_file = BASE_DIR / "index.html"
     if not index_file.is_file():
         raise HTTPException(status_code=404, detail="index.html not found")
@@ -1144,7 +1500,7 @@ async def api_download(req: DownloadRequest, request: FastApiRequest):
 
 @app.get("/api/status/{job_id}")
 async def api_status(job_id: str):
-    """Return status and progress of a background job."""
+    """Return status, stage, speed, and progress of a background job (Section 7)."""
     if not job_id or not job_id.isalnum():
         raise HTTPException(status_code=400, detail="Invalid job ID format.")
 
@@ -1154,8 +1510,13 @@ async def api_status(job_id: str):
 
     return {
         "status": job["status"],
-        "progress": job["progress"],
-        "error": job["error"],
+        "stage": job.get("stage", job["status"]),
+        "progress": job.get("progress", 0),
+        "downloaded_bytes": job.get("downloaded_bytes", 0),
+        "total_bytes": job.get("total_bytes"),
+        "speed": job.get("speed"),
+        "eta": job.get("eta"),
+        "error": job.get("error"),
     }
 
 @app.get("/api/file/{job_id}")
