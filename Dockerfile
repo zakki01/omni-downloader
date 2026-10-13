@@ -8,9 +8,13 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 # Set production working directory
 WORKDIR /app
 
-# Install FFmpeg, curl, and CA certificates via OS package manager
+# Install FFmpeg, Node.js (JavaScript runtime for yt-dlp challenge solver), curl, and CA certificates
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends ffmpeg curl ca-certificates && \
+    apt-get install -y --no-install-recommends \
+        ffmpeg \
+        nodejs \
+        curl \
+        ca-certificates && \
     rm -rf /var/lib/apt/lists/*
 
 # Copy requirements first for Docker layer caching

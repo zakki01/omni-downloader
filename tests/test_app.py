@@ -1,8 +1,15 @@
+import os
 from starlette.testclient import TestClient
 from app import (
     app,
     build_format_selector,
+    build_ydl_base_opts,
+    categorize_error,
+    detect_bot_check_error,
+    detect_drm_error,
     get_available_heights,
+    get_youtube_extractor_args,
+    is_youtube_url,
     rate_limiter,
     sanitize_filename,
 )
@@ -124,3 +131,59 @@ def test_rate_limiter():
     res = client.post("/api/info", json={"url": "invalid://test"})
     assert res.status_code == 429
     reset_limiter()
+
+def test_youtube_url_detection():
+    assert is_youtube_url("https://www.youtube.com/watch?v=dQw4w9WgXcQ") is True
+    assert is_youtube_url("https://youtu.be/dQw4w9WgXcQ") is True
+    assert is_youtube_url("https://m.youtube.com/watch?v=dQw4w9WgXcQ") is True
+    assert is_youtube_url("https://youtube-nocookie.com/embed/dQw4w9WgXcQ") is True
+    assert is_youtube_url("https://example.com/video.mp4") is False
+    assert is_youtube_url("https://vimeo.com/123456") is False
+
+def test_youtube_extractor_args_and_po_token(monkeypatch):
+    monkeypatch.delenv("YOUTUBE_PLAYER_CLIENTS", raising=False)
+    monkeypatch.delenv("YOUTUBE_PO_TOKEN", raising=False)
+    args = get_youtube_extractor_args()
+    assert args == {}
+
+    monkeypatch.setenv("YOUTUBE_PLAYER_CLIENTS", "android,web,mweb")
+    monkeypatch.setenv("YOUTUBE_PO_TOKEN", "sample_po_token_123")
+    args = get_youtube_extractor_args()
+    assert "youtube" in args
+    assert args["youtube"]["player_client"] == ["android", "web", "mweb"]
+    assert "web.gvs+sample_po_token_123" in args["youtube"]["po_token"]
+
+def test_error_classification_bot_check_vs_drm():
+    # 1. YouTube bot check error (Render/Datacenter IP scenario)
+    bot_err_1 = Exception("ERROR: [youtube] dQw4w9WgXcQ: Sign in to confirm you’re not a bot. Use --cookies-from-browser or --cookies for the authentication.")
+    bot_err_2 = Exception("ERROR: [youtube] 12345: Sign in to confirm you're not a bot.")
+    bot_err_3 = Exception("ERROR: [youtube] 12345: Unusual traffic from your computer network, solve a captcha")
+    
+    assert detect_bot_check_error(bot_err_1) is True
+    assert detect_bot_check_error(bot_err_2) is True
+    assert detect_bot_check_error(bot_err_3) is True
+
+    cat_msg_1 = categorize_error(bot_err_1)
+    assert "requiring additional verification" in cat_msg_1
+    assert "cannot bypass" in cat_msg_1
+    assert "DRM" not in cat_msg_1  # Crucial: Must NEVER falsely claim DRM
+
+    # 2. Genuine DRM error
+    drm_err = Exception("ERROR: [generic] This video is DRM-protected and cannot be downloaded.")
+    assert detect_drm_error(drm_err) is True
+    assert categorize_error(drm_err) == "This video is DRM-protected and cannot be downloaded."
+
+    # 3. Network unreachable
+    net_err = Exception("ERROR: Unable to download webpage: <urlopen error [Errno 11001] getaddrinfo failed>")
+    assert categorize_error(net_err) == "The video could not be reached. Please check the URL and try again."
+
+def test_build_ydl_base_opts():
+    yt_opts = build_ydl_base_opts("https://www.youtube.com/watch?v=dQw4w9WgXcQ")
+    assert yt_opts["noplaylist"] is True
+    assert "node" in yt_opts["js_runtimes"]
+    assert "deno" in yt_opts["js_runtimes"]
+    assert "ejs:github" in yt_opts["remote_components"]
+
+    generic_opts = build_ydl_base_opts("https://example.com/sample.mp4")
+    assert generic_opts["noplaylist"] is True
+

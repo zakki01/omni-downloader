@@ -35,6 +35,7 @@ A secure, self-hostable media downloader powered by FastAPI, `yt-dlp`, and FFmpe
 
 - Python 3.11+
 - FFmpeg
+- Node.js (or Deno) — required by `yt-dlp` for YouTube signature and JavaScript challenge solving
 - Docker (recommended for containerized deployment)
 
 ---
@@ -114,8 +115,50 @@ Navigate to `http://localhost:8000` to verify the UI and test downloads.
 |---|---|---|
 | `PORT` | `8000` | Port on which the Uvicorn web server listens (injected dynamically by Render). |
 | `PYTHONUNBUFFERED` | `1` | Ensures real-time stdout/stderr log output in Docker containers. |
+| `YOUTUBE_PO_TOKEN` | *None* | Proof of Origin (PO) token / GVS credentials string (e.g. `web.gvs+TOKEN` or `TOKEN`) for modern YouTube extraction. |
+| `YOUTUBE_PLAYER_CLIENTS` | *None (default)* | Comma-separated list of player clients (e.g. `android,web,mweb`). |
+| `COOKIES_FILE_PATH` | *None* | Absolute path to a Netscape-formatted `cookies.txt` file on the server. |
+| `YOUTUBE_COOKIES_TEXT` | *None* | Raw Netscape cookies text content passed directly via environment variable (useful for container PaaS). |
 
-*Note: Omni Downloader does not require external database connection strings or third-party secret API keys.*
+---
+
+## YouTube Extraction & Cloud / Datacenter Deployments
+
+### The Datacenter IP Challenge
+Major cloud hosting providers (Render, AWS, GCP, DigitalOcean, Hetzner) host IP ranges that are heavily monitored and challenged by YouTube's automated bot protection systems. When a server on these ranges requests YouTube metadata without authorization or a browser session, YouTube returns:
+
+```text
+ERROR: [youtube] <video_id>: Sign in to confirm you’re not a bot.
+Use --cookies-from-browser or --cookies for the authentication.
+```
+
+Omni Downloader adheres strictly to ethical, legal, and security guidelines:
+- **No CAPTCHA bypass**: We do not implement automated CAPTCHA solvers or anti-bot circumvention hacks.
+- **Accurate Error Messaging**: When YouTube triggers a bot verification challenge, Omni Downloader returns a clear, transparent message:
+  > *"YouTube is currently requiring additional verification for this request. This server cannot bypass that protection. Try another supported URL or configure authorized YouTube access for the server."*
+- **No False DRM Claims**: Bot verification errors are cleanly distinguished from DRM encryption errors.
+
+### Configuring Authorized Access on Render
+
+If you are running Omni Downloader on Render or another cloud provider and wish to enable YouTube extraction:
+
+#### 1. PO Token Configuration (Recommended)
+You can supply a PO Token generated in a browser session via the `YOUTUBE_PO_TOKEN` environment variable in the Render Dashboard:
+```text
+YOUTUBE_PO_TOKEN=web.gvs+<YOUR_BASE64_PO_TOKEN>
+```
+For details on generating a PO Token, consult the [yt-dlp PO-Token Guide](https://github.com/yt-dlp/yt-dlp/wiki/PO-Token-Guide).
+
+#### 2. Supplying Cookies via Render Secret Files
+Render provides a **Secret Files** feature:
+1. Export a Netscape `cookies.txt` file from your browser (e.g., using a browser extension like *Get cookies.txt LOCALLY*).
+2. In the Render Dashboard under **Environment** > **Secret Files**, add a file with filename `cookies.txt` and contents of your exported cookies.
+3. Render automatically mounts Secret Files to `/etc/secrets/cookies.txt`, which Omni Downloader automatically detects at startup without exposing credentials or requiring manual path configuration.
+
+#### 3. Supplying Cookies via Environment Variable
+Alternatively, paste the contents of your `cookies.txt` file directly into the `YOUTUBE_COOKIES_TEXT` environment variable in Render. Omni Downloader will write this securely to a local, gitignored cache file.
+
+*Never commit `cookies.txt` or personal authentication tokens to public repositories.*
 
 ---
 

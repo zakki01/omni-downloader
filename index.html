@@ -948,11 +948,13 @@
     function showError(message) {
       elements.alertMessageText.textContent = message;
       elements.alertBanner.className = 'alert-banner error';
+      elements.alertBanner.style.display = 'flex';
     }
 
     function showSuccess(message) {
       elements.alertMessageText.textContent = message;
       elements.alertBanner.className = 'alert-banner info';
+      elements.alertBanner.style.display = 'flex';
     }
 
     function clearAlert() {

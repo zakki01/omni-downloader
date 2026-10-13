@@ -9,7 +9,7 @@ venv
 env
 downloads/*
 !downloads/.gitkeep
-cookies.txt
+*cookies*
 .env
 .env.*
 tests

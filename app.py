@@ -38,13 +38,63 @@ BASE_DIR = Path(__file__).resolve().parent
 DOWNLOAD_DIR = BASE_DIR / "downloads"
 DOWNLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
+# ---------------------------------------------------------------------------
+# Diagnostics & Runtime Detection
+# ---------------------------------------------------------------------------
+logger.info(f"yt-dlp version: {yt_dlp.version.__version__}")
+
+def get_js_runtime_info() -> Dict[str, Optional[str]]:
+    """Locate supported JavaScript runtimes for yt-dlp challenge solving."""
+    return {
+        "node": shutil.which("node"),
+        "deno": shutil.which("deno"),
+    }
+
+JS_RUNTIMES = get_js_runtime_info()
+available_js = [name for name, path in JS_RUNTIMES.items() if path]
+if available_js:
+    logger.info(f"[JS RUNTIME] Detected JavaScript runtimes: {', '.join(available_js)}")
+else:
+    logger.warning("[JS RUNTIME] No supported JavaScript runtime found on PATH (node or deno). YouTube extraction may fail or be restricted.")
+
+def get_cookies_file_path() -> Optional[Path]:
+    """Resolve cookies file from environment variable or standard paths without leaking secrets."""
+    env_path = os.environ.get("COOKIES_FILE_PATH")
+    if env_path:
+        p = Path(env_path)
+        if p.is_file():
+            return p
+    render_secret = Path("/etc/secrets/cookies.txt")
+    if render_secret.is_file():
+        return render_secret
+    local_file = BASE_DIR / "cookies.txt"
+    if local_file.is_file():
+        return local_file
+    cookies_text = os.environ.get("YOUTUBE_COOKIES_TEXT", "").strip()
+    if cookies_text:
+        cached_cookie = BASE_DIR / ".cookies_env.txt"
+        if not cached_cookie.is_file() or cached_cookie.stat().st_size == 0:
+            try:
+                cached_cookie.write_text(cookies_text, encoding="utf-8")
+            except Exception as e:
+                logger.warning(f"Could not cache YOUTUBE_COOKIES_TEXT: {e}")
+        if cached_cookie.is_file():
+            return cached_cookie
+    return None
+
+if get_cookies_file_path():
+    logger.info("[AUTH] Cookies configuration detected and enabled")
+else:
+    logger.info("[AUTH] No cookies provided (running in anonymous mode)")
+
+# ---------------------------------------------------------------------------
+# Constants
+# ---------------------------------------------------------------------------
 MAX_WORKERS = 2
 RATE_LIMIT_MAX_REQUESTS = 5
 RATE_LIMIT_WINDOW_SECONDS = 60
 CLEANUP_AGE_SECONDS = 3600  # 1 hour
 CLEANUP_INTERVAL_SECONDS = 300  # 5 minutes
-
-COOKIES_FILE = BASE_DIR / "cookies.txt"
 
 # ---------------------------------------------------------------------------
 # FFmpeg Detection and Environment Configuration
@@ -263,8 +313,32 @@ def install_ssrf_guards() -> None:
 install_ssrf_guards()
 
 # ---------------------------------------------------------------------------
-# DRM and Error Classification
+# Error Classification & Verification Detection
 # ---------------------------------------------------------------------------
+def detect_bot_check_error(e: Exception) -> bool:
+    """Detect if an exception from yt-dlp indicates YouTube bot verification or sign-in requirement."""
+    msg = str(e).lower()
+    bot_indicators = [
+        "sign in to confirm you're not a bot",
+        "sign in to confirm you’re not a bot",
+        "confirm you're not a bot",
+        "confirm you’re not a bot",
+        "use --cookies-from-browser",
+        "use --cookies",
+        "bot verification",
+        "bot detection",
+        "automated queries",
+        "unusual traffic",
+        "solve a captcha",
+        "robot",
+        "sign in to view this video",
+        "sign in to confirm your age",
+        "confirm your age",
+        "private video. sign in",
+        "this video is private",
+    ]
+    return any(indicator in msg for indicator in bot_indicators)
+
 def detect_drm_error(e: Exception) -> bool:
     """Detect if an exception from yt-dlp indicates DRM-protected content."""
     msg = str(e).lower()
@@ -286,9 +360,19 @@ def detect_drm_error(e: Exception) -> bool:
 
 def categorize_error(e: Exception) -> str:
     """Map raw exceptions to clean, user-facing error messages."""
+    # Priority 1: Bot challenge or sign-in required (do not confuse with DRM)
+    if detect_bot_check_error(e):
+        return (
+            "YouTube is currently requiring additional verification for this request. "
+            "This server cannot bypass that protection. "
+            "Try another supported URL or configure authorized YouTube access for the server."
+        )
+
+    # Priority 2: DRM protection
     if detect_drm_error(e):
         return "This video is DRM-protected and cannot be downloaded."
 
+    # Priority 3: Other environmental or network issues
     msg = str(e).lower()
     if "ffmpeg is not installed" in msg or "ffmpeg not found" in msg or "ffmpeg is required" in msg:
         return "FFmpeg is required for this download. Please install FFmpeg and try again."
@@ -351,53 +435,115 @@ def build_format_selector(quality: str) -> Tuple[str, List[Dict[str, Any]]]:
     return format_str, postprocessors
 
 # ---------------------------------------------------------------------------
-# Metadata Extraction
+# YouTube Extractor Architecture & Options Builder
 # ---------------------------------------------------------------------------
-def extract_video_info(url: str) -> Dict[str, Any]:
-    """Extract metadata using yt-dlp with download=False and noplaylist=True."""
-    ydl_opts: Dict[str, Any] = {
-        "download": False,
+def is_youtube_url(url: str) -> bool:
+    """Identify if the given URL belongs to YouTube domains."""
+    try:
+        parsed = urllib.parse.urlparse(url)
+        host = (parsed.hostname or "").lower()
+        return any(d in host for d in ("youtube.com", "youtu.be", "youtube-nocookie.com"))
+    except Exception:
+        return False
+
+def get_youtube_extractor_args() -> Dict[str, Any]:
+    """Build extractor arguments specifically for YouTube (client selection and PO token)."""
+    yt_args: Dict[str, List[str]] = {}
+
+    clients_env = os.environ.get("YOUTUBE_PLAYER_CLIENTS", "").strip()
+    if clients_env:
+        yt_args["player_client"] = [c.strip() for c in clients_env.split(",") if c.strip()]
+
+    po_token_env = os.environ.get("YOUTUBE_PO_TOKEN", "").strip()
+    if po_token_env:
+        if "+" in po_token_env:
+            yt_args["po_token"] = [po_token_env]
+        else:
+            yt_args["po_token"] = [f"web.gvs+{po_token_env}", f"web+{po_token_env}"]
+
+    return {"youtube": yt_args} if yt_args else {}
+
+def build_ydl_base_opts(url: str) -> Dict[str, Any]:
+    """Construct base YoutubeDL configuration with JS runtimes and extractor-specific tuning."""
+    opts: Dict[str, Any] = {
         "noplaylist": True,
         "quiet": True,
         "no_warnings": True,
         "extract_flat": False,
+        "js_runtimes": {"node": {}, "deno": {}},
+        "remote_components": ["ejs:github"],
     }
 
     if FFMPEG_PATH:
-        ydl_opts["ffmpeg_location"] = str(Path(FFMPEG_PATH).parent)
+        opts["ffmpeg_location"] = str(Path(FFMPEG_PATH).parent)
 
-    if COOKIES_FILE.is_file():
-        ydl_opts["cookiefile"] = str(COOKIES_FILE)
+    cookies_path = get_cookies_file_path()
+    if cookies_path:
+        opts["cookiefile"] = str(cookies_path)
 
+    if is_youtube_url(url):
+        yt_args = get_youtube_extractor_args()
+        if yt_args:
+            opts["extractor_args"] = yt_args
+
+    return opts
+
+def _process_extracted_info(info: Dict[str, Any], url: str) -> Dict[str, Any]:
+    """Process raw info dict into standardized API output format."""
+    formats = info.get("formats", [])
+    top_height = info.get("height")
+    int_top_height = int(top_height) if isinstance(top_height, (int, float)) else None
+    sorted_heights = get_available_heights(formats, int_top_height)
+
+    duration = info.get("duration")
+    int_duration = int(duration) if duration is not None and isinstance(duration, (int, float)) else None
+
+    logger.info(
+        f"[YT-DLP INFO]\n"
+        f"extractor={info.get('extractor')}\n"
+        f"title={info.get('title')}\n"
+        f"duration={int_duration}s\n"
+        f"available_heights={sorted_heights}"
+    )
+
+    return {
+        "title": info.get("title") or "Unknown Video",
+        "thumbnail": info.get("thumbnail"),
+        "duration": int_duration,
+        "heights": sorted_heights,
+        "resolved_url": info.get("webpage_url") or url,
+    }
+
+def extract_youtube_info(url: str) -> Dict[str, Any]:
+    """Dedicated extraction pipeline for YouTube URLs."""
+    ydl_opts = build_ydl_base_opts(url)
+    ydl_opts["download"] = False
+
+    logger.info(f"[EXTRACTION] Dedicated YouTube extractor executing for: {url}")
+    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        info = ydl.extract_info(url, download=False)
+        if not info:
+            raise RuntimeError("Failed to extract YouTube video information.")
+        return _process_extracted_info(info, url)
+
+def extract_generic_info(url: str) -> Dict[str, Any]:
+    """Extraction pipeline for non-YouTube URLs."""
+    ydl_opts = build_ydl_base_opts(url)
+    ydl_opts["download"] = False
+
+    logger.info(f"[EXTRACTION] Generic media extractor executing for: {url}")
+    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        info = ydl.extract_info(url, download=False)
+        if not info:
+            raise RuntimeError("Failed to extract media information.")
+        return _process_extracted_info(info, url)
+
+def extract_video_info(url: str) -> Dict[str, Any]:
+    """Extract metadata using either dedicated YouTube or generic pipeline."""
     try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(url, download=False)
-            if not info:
-                raise RuntimeError("Failed to extract video information.")
-
-            formats = info.get("formats", [])
-            top_height = info.get("height")
-            int_top_height = int(top_height) if isinstance(top_height, (int, float)) else None
-            sorted_heights = get_available_heights(formats, int_top_height)
-
-            duration = info.get("duration")
-            int_duration = int(duration) if duration is not None and isinstance(duration, (int, float)) else None
-
-            logger.info(
-                f"[YT-DLP INFO]\n"
-                f"extractor={info.get('extractor')}\n"
-                f"title={info.get('title')}\n"
-                f"duration={int_duration}s\n"
-                f"available_heights={sorted_heights}"
-            )
-
-            return {
-                "title": info.get("title") or "Unknown Video",
-                "thumbnail": info.get("thumbnail"),
-                "duration": int_duration,
-                "heights": sorted_heights,
-                "resolved_url": info.get("webpage_url") or url,
-            }
+        if is_youtube_url(url):
+            return extract_youtube_info(url)
+        return extract_generic_info(url)
     except Exception as e:
         logger.error(f"Metadata extraction error for {url}: {e}", exc_info=True)
         clean_message = categorize_error(e)
@@ -471,19 +617,15 @@ def download_media(job_id: str, url: str, quality: str) -> None:
     )
 
     try:
-        ydl_opts: Dict[str, Any] = {
+        ydl_opts = build_ydl_base_opts(url)
+        ydl_opts.update({
             "format": format_str,
             "outtmpl": out_template,
-            "noplaylist": True,
-            "quiet": True,
-            "no_warnings": True,
             "progress_hooks": [lambda d: progress_hook(d, job_id)],
-        }
+        })
 
-        # Explicitly configure FFmpeg location if detected
-        if FFMPEG_PATH:
-            ydl_opts["ffmpeg_location"] = str(Path(FFMPEG_PATH).parent)
-        elif quality == "audio" or "+" in format_str:
+        # Explicitly configure FFmpeg check
+        if not FFMPEG_PATH and (quality == "audio" or "+" in format_str):
             raise RuntimeError("FFmpeg is required for this download. Please install FFmpeg and try again.")
 
         if quality != "audio":
@@ -491,9 +633,6 @@ def download_media(job_id: str, url: str, quality: str) -> None:
 
         if postprocessors:
             ydl_opts["postprocessors"] = postprocessors
-
-        if COOKIES_FILE.is_file():
-            ydl_opts["cookiefile"] = str(COOKIES_FILE)
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=True)
