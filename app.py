@@ -85,13 +85,42 @@ def get_ffmpeg_path() -> Optional[str]:
 def is_ffmpeg_available() -> bool:
     return get_ffmpeg_path() is not None
 
+def get_deno_path() -> Optional[str]:
+    """Locate Deno binary across PATH and platform-specific standard directories."""
+    found = shutil.which("deno")
+    if found:
+        return found
+    if os.name == "nt":
+        candidates = [
+            os.path.expanduser(r"~/.deno/bin/deno.exe"),
+            os.path.expandvars(r"%USERPROFILE%\.deno\bin\deno.exe"),
+            os.path.expandvars(r"%LOCALAPPDATA%\Microsoft\WinGet\Links\deno.exe"),
+        ]
+        for c in candidates:
+            if os.path.isfile(c):
+                return c
+    for unix_path in ("/usr/local/bin/deno", "/usr/bin/deno", "/bin/deno", "/root/.deno/bin/deno"):
+        if os.path.isfile(unix_path) and os.access(unix_path, os.X_OK):
+            return unix_path
+    return None
+
+def is_deno_available() -> bool:
+    return get_deno_path() is not None
+
 YTDLP_BIN = get_ytdlp_bin()
 FFMPEG_PATH = get_ffmpeg_path()
+DENO_PATH = get_deno_path()
 
 if FFMPEG_PATH:
     ffmpeg_dir = str(Path(FFMPEG_PATH).parent)
     if ffmpeg_dir not in os.environ.get("PATH", ""):
         os.environ["PATH"] = ffmpeg_dir + os.pathsep + os.environ.get("PATH", "")
+
+if DENO_PATH:
+    deno_dir = str(Path(DENO_PATH).parent)
+    if deno_dir not in os.environ.get("PATH", ""):
+        os.environ["PATH"] = deno_dir + os.pathsep + os.environ.get("PATH", "")
+
 
 # ---------------------------------------------------------------------------
 # SSRF Protection & URL Validation
@@ -347,6 +376,8 @@ def extract_metadata_subprocess(url: str, timeout: int = 45) -> Dict[str, Any]:
     cmd = [YTDLP_BIN, "--dump-single-json", "--no-warnings", "--no-playlist"]
     if FFMPEG_PATH:
         cmd.extend(["--ffmpeg-location", FFMPEG_PATH])
+    if DENO_PATH:
+        cmd.extend(["--js-runtimes", f"deno:{DENO_PATH}"])
     cmd.append(url)
 
     try:
@@ -355,7 +386,8 @@ def extract_metadata_subprocess(url: str, timeout: int = 45) -> Dict[str, Any]:
         raise HTTPException(status_code=504, detail="The request timed out while contacting the video source.")
 
     if res.returncode != 0:
-        logger.warning(f"yt-dlp extraction failed for {url}: {res.stderr.strip()[-300:]}")
+        sanitized_stderr = re.sub(r"(token|auth|cookie|key)=[\w\.\-]+", r"\1=[REDACTED]", res.stderr, flags=re.I)
+        logger.warning(f"yt-dlp extraction failed for {url}: {sanitized_stderr.strip()[-400:]}")
         cat, msg = categorize_error_text(res.stderr, is_youtube=is_youtube_url(url))
         raise HTTPException(status_code=400, detail=msg)
 
@@ -508,6 +540,8 @@ def _run_download_job(
     cmd = [YTDLP_BIN, "--newline", "--no-warnings", "--no-playlist"]
     if FFMPEG_PATH:
         cmd.extend(["--ffmpeg-location", FFMPEG_PATH])
+    if DENO_PATH:
+        cmd.extend(["--js-runtimes", f"deno:{DENO_PATH}"])
 
     if format_id == "mp3":
         cmd.extend(["-o", out_template, "-x", "--audio-format", "mp3", url])
@@ -652,7 +686,34 @@ async def _cleanup_loop() -> None:
 # ---------------------------------------------------------------------------
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    logger.info(f"Omni Downloader starting. yt-dlp: {YTDLP_BIN}, ffmpeg: {FFMPEG_PATH or 'None'}")
+    # Detect component versions for startup logging and diagnostics
+    ytdlp_ver = "unknown"
+    try:
+        ytdlp_res = subprocess.run([YTDLP_BIN, "--version"], capture_output=True, text=True, timeout=5)
+        ytdlp_ver = ytdlp_res.stdout.strip()
+    except Exception:
+        pass
+
+    ejs_ver = "not installed"
+    try:
+        import yt_dlp_ejs
+        ejs_ver = getattr(yt_dlp_ejs, "__version__", "installed")
+    except ImportError:
+        pass
+
+    deno_ver = "not available"
+    if DENO_PATH:
+        try:
+            deno_res = subprocess.run([DENO_PATH, "--version"], capture_output=True, text=True, timeout=5)
+            deno_ver = (deno_res.stdout.splitlines()[0] if deno_res.stdout else "").strip()
+        except Exception as e:
+            deno_ver = f"error: {e}"
+
+    logger.info(
+        f"Omni Downloader starting. yt-dlp: {ytdlp_ver} ({YTDLP_BIN}) | "
+        f"yt-dlp-ejs: {ejs_ver} | Deno: {deno_ver} ({DENO_PATH or 'PATH'}) | "
+        f"FFmpeg: {FFMPEG_PATH or 'None'}"
+    )
     cleanup_task = asyncio.create_task(_cleanup_loop())
     yield
     cleanup_task.cancel()
@@ -690,6 +751,42 @@ class DownloadRequest(BaseModel):
 @app.get("/health")
 async def health_check():
     return {"status": "ok"}
+
+@app.get("/api/diagnostics")
+async def api_diagnostics():
+    ytdlp_ver = "unknown"
+    try:
+        ytdlp_res = subprocess.run([YTDLP_BIN, "--version"], capture_output=True, text=True, timeout=5)
+        ytdlp_ver = ytdlp_res.stdout.strip()
+    except Exception as e:
+        ytdlp_ver = str(e)
+
+    ejs_ver = "not installed"
+    try:
+        import yt_dlp_ejs
+        ejs_ver = getattr(yt_dlp_ejs, "__version__", "installed")
+    except ImportError:
+        pass
+
+    deno_ver = "not available"
+    if DENO_PATH:
+        try:
+            deno_res = subprocess.run([DENO_PATH, "--version"], capture_output=True, text=True, timeout=5)
+            deno_ver = (deno_res.stdout.splitlines()[0] if deno_res.stdout else "").strip()
+        except Exception as e:
+            deno_ver = str(e)
+
+    return {
+        "status": "ok",
+        "ytdlp_version": ytdlp_ver,
+        "ytdlp_ejs_version": ejs_ver,
+        "ejs_installed": ejs_ver != "not installed",
+        "deno_version": deno_ver,
+        "deno_path": DENO_PATH,
+        "deno_available": DENO_PATH is not None,
+        "ffmpeg_available": is_ffmpeg_available(),
+    }
+
 
 @app.get("/", response_class=HTMLResponse)
 async def serve_root():
